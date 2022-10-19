@@ -1,0 +1,15 @@
+node_modules
+.eslint*
+api-extractor.json
+tsconfig*
+/src
+/scripts
+.vscode
+/temp
+/docs
+/coverage
+/test
+*.map
+tsgo.config.js
+jest.config*
+/lib/esm-bundler

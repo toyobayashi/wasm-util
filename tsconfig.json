@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "outDir": "./lib/cjs",
+    "allowJs": true,
+    "target": "ES2019",
+    "module": "CommonJS",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "noImplicitReturns": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "importsNotUsedAsValues": "error",
+    "importHelpers": true,
+    "noEmitHelpers": true,
+    "types": []
+  },
+  "include": [
+    "./src/**/*"
+  ]
+}

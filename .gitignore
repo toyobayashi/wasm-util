@@ -1,0 +1,9 @@
+package-lock.json
+.DS_Store
+node_modules
+/dist
+/lib
+/temp
+/coverage
+miniprogram_dist
+/docs
