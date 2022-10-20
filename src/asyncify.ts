@@ -10,8 +10,7 @@ const ignoreNames = [
   'asyncify_stop_unwind'
 ]
 
-/** @type {WeakMap<WebAssembly.Exports, WebAssembly.Exports>} */
-const wrappedExports = new WeakMap()
+const wrappedExports = new WeakMap<WebAssembly.Exports, WebAssembly.Exports>()
 
 const enum AsyncifyState {
   NONE,
@@ -23,7 +22,20 @@ const enum AsyncifyState {
 type Pointer<_T = any> = number | bigint
 
 /** @public */
-export type WebAssemblyFunction = (...args: Array<number | bigint>) => (number | bigint | undefined)
+export type Callable = (...args: any[]) => any
+
+/** @public */
+export type FunctionOrCallable = Function | Callable
+
+/** @public */
+export type AsyncifyExportFunction<T> = T extends Callable ? (...args: Parameters<T>) => Promise<ReturnType<T>> : T
+
+/** @public */
+export type AsyncifyExports<T> = T extends Record<string, any>
+  ? {
+      [P in keyof T]: T[P] extends Callable ? AsyncifyExportFunction<T[P]> : T[P]
+    }
+  : T
 
 /** @public */
 export class Asyncify {
@@ -61,7 +73,7 @@ export class Asyncify {
     }
   }
 
-  public wrapImportFunction<T extends WebAssemblyFunction> (f: T): T {
+  public wrapImportFunction<T extends FunctionOrCallable> (f: T): T {
     return ((...args: Array<number | bigint>) => {
       // eslint-disable-next-line no-unreachable-loop
       while (this.exports!.asyncify_get_state() === AsyncifyState.REWINDING) {
@@ -94,7 +106,7 @@ export class Asyncify {
     return importObject
   }
 
-  public wrapExportFunction<T extends WebAssemblyFunction> (f: T): (...args: Parameters<T>) => Promise<ReturnType<T>> {
+  public wrapExportFunction<T extends FunctionOrCallable> (f: T): AsyncifyExportFunction<T> {
     return (async (...args: Array<number | bigint>) => {
       this.assertState()
       let ret = f(...args)
@@ -112,7 +124,7 @@ export class Asyncify {
     }) as any
   }
 
-  public wrapExports<T extends WebAssembly.Exports> (exports: T): T {
+  public wrapExports<T extends WebAssembly.Exports> (exports: T): AsyncifyExports<T> {
     const newExports = Object.create(null)
     Object.keys(exports).forEach(name => {
       const exportValue = exports[name]
@@ -137,7 +149,7 @@ export class Instance extends WebAssembly.Instance {
   }
 
   get exports (): WebAssembly.Exports {
-    return wrappedExports.get(super.exports)
+    return wrappedExports.get(super.exports)!
   }
 }
 Object.defineProperty(Instance.prototype, 'exports', { enumerable: true })

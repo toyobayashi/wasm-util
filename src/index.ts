@@ -5,3 +5,4 @@
  */
 
 export * from './asyncify'
+export * from './load'
