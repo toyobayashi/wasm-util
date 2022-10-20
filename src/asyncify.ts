@@ -18,14 +18,17 @@ const enum AsyncifyState {
   REWINDING,
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type Pointer<_T = any> = number | bigint
+type AsyncifiedExports = {
+  asyncify_get_state: () => AsyncifyState
+  asyncify_start_unwind: (p: number | bigint) => void
+  asyncify_stop_unwind: () => void
+  asyncify_start_rewind: (p: number | bigint) => void
+  asyncify_stop_rewind: () => void
+  [x: string]: WebAssembly.ExportValue
+}
 
 /** @public */
 export type Callable = (...args: any[]) => any
-
-/** @public */
-export type FunctionOrCallable = Function | Callable
 
 /** @public */
 export type AsyncifyExportFunction<T> = T extends Callable ? (...args: Parameters<T>) => Promise<ReturnType<T>> : T
@@ -40,13 +43,7 @@ export type AsyncifyExports<T> = T extends Record<string, any>
 /** @public */
 export class Asyncify {
   private value: any = undefined
-  private exports: WebAssembly.Exports & {
-    asyncify_get_state: () => AsyncifyState
-    asyncify_start_unwind: (p: Pointer) => void
-    asyncify_stop_unwind: () => void
-    asyncify_start_rewind: (p: Pointer) => void
-    asyncify_stop_rewind: () => void
-  } | undefined = undefined
+  private exports: AsyncifiedExports | undefined = undefined
 
   public constructor (public dataPtr = 16) {}
 
@@ -73,7 +70,7 @@ export class Asyncify {
     }
   }
 
-  public wrapImportFunction<T extends FunctionOrCallable> (f: T): T {
+  public wrapImportFunction<T extends Function> (f: T): T {
     return ((...args: Array<number | bigint>) => {
       // eslint-disable-next-line no-unreachable-loop
       while (this.exports!.asyncify_get_state() === AsyncifyState.REWINDING) {
@@ -106,12 +103,12 @@ export class Asyncify {
     return importObject
   }
 
-  public wrapExportFunction<T extends FunctionOrCallable> (f: T): AsyncifyExportFunction<T> {
+  public wrapExportFunction<T extends Function> (f: T): AsyncifyExportFunction<T> {
     return (async (...args: Array<number | bigint>) => {
       this.assertState()
       let ret = f(...args)
 
-      while (this.exports!.asyncify_get_state() === 1 /* UNWINDING */) {
+      while (this.exports!.asyncify_get_state() === AsyncifyState.UNWINDING) {
         this.exports!.asyncify_stop_unwind()
         this.value = await this.value
         this.assertState()

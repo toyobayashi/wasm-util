@@ -2,7 +2,7 @@
   "compilerOptions": {
     "outDir": "./lib/cjs",
     "allowJs": true,
-    "target": "ES2019",
+    "target": "ES2020",
     "module": "CommonJS",
     "strict": true,
     "noUnusedLocals": true,
@@ -16,7 +16,7 @@
     "importsNotUsedAsValues": "error",
     "importHelpers": true,
     "noEmitHelpers": true,
-    "types": []
+    "types": ["node"]
   },
   "include": [
     "./src/**/*"

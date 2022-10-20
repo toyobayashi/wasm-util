@@ -44,7 +44,7 @@ module.exports = defineConfig({
   tscTargets: [
     {
       optionsToExtend: {
-        target: typescript.ScriptTarget.ES2020,
+        target: typescript.ScriptTarget.ES2019,
         module: typescript.ModuleKind.ESNext,
         outDir: path.join(root, 'lib/esm-bundler'),
         declaration: true
