@@ -41,13 +41,28 @@ export type AsyncifyExports<T> = T extends Record<string, any>
   : T
 
 /** @public */
+export interface AsyncifyDataAddress {
+  wasm64: boolean
+  dataPtr: number
+  start: number
+  end: number
+}
+
+/** @public */
 export class Asyncify {
   private value: any = undefined
   private exports: AsyncifiedExports | undefined = undefined
+  private dataPtr: number = 0
 
-  public constructor (public dataPtr = 16) {}
+  public tryAllocate (instance: WebAssembly.Instance, size = 4096, mallocName = 'malloc', wasm64 = false): AsyncifyDataAddress | undefined {
+    if (typeof instance.exports[mallocName] !== 'function') return
+    const malloc = instance.exports[mallocName] as Function
+    const dataPtr: number = wasm64 ? Number(malloc(BigInt(16))) : malloc(8)
+    const buffer: number = wasm64 ? Number(malloc(BigInt(size))) : malloc(size)
+    return { wasm64, dataPtr, start: buffer, end: buffer + size }
+  }
 
-  public init (imports: WebAssembly.Imports, instance: WebAssembly.Instance, start = 24, end = 1024): void {
+  public init (imports: WebAssembly.Imports, instance: WebAssembly.Instance, address?: AsyncifyDataAddress): void {
     if (instance instanceof Instance) return
     const exports = instance.exports
     const memory = exports.memory || (imports.env?.memory)
@@ -59,7 +74,20 @@ export class Asyncify {
         throw new TypeError('Invalid asyncify wasm')
       }
     }
-    new Int32Array(memory.buffer, this.dataPtr).set([start, end])
+    if (!address) {
+      address = {
+        wasm64: false,
+        dataPtr: 16,
+        start: 24,
+        end: 1024
+      }
+    }
+    this.dataPtr = address.dataPtr
+    if (address.wasm64) {
+      new BigInt64Array(memory.buffer, this.dataPtr).set([BigInt(address.start), BigInt(address.end)])
+    } else {
+      new Int32Array(memory.buffer, this.dataPtr).set([address.start, address.end])
+    }
     this.exports = this.wrapExports(exports) as any
     Object.setPrototypeOf(instance, Instance.prototype)
   }
