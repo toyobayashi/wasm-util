@@ -7,3 +7,5 @@ node_modules
 /coverage
 miniprogram_dist
 /docs
+/test/build
+/test/webpack

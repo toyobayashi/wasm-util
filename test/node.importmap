@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "@tybys/wasm-util": "../lib/mjs/index.mjs"
+  }
+}

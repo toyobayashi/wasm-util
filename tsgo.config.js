@@ -52,7 +52,7 @@ module.exports = defineConfig({
       customTransformersAfter: () => ({
         after: [transformPureClass, createModuleSpecifierTransformer('.js')]
       })
-    }/* ,
+    },
     {
       transpileOnly: true,
       optionsToExtend: {
@@ -74,10 +74,9 @@ module.exports = defineConfig({
         outDir: path.join(root, 'lib/mjs')
       },
       customTransformersAfter: () => ({
-        before: [createModuleSpecifierTransformer('.mjs')],
-        after: [transformPureClass]
+        after: [transformPureClass, createModuleSpecifierTransformer('.mjs')]
       })
-    } */
+    }
   ],
   libraryName: name,
   bundleTargets: [

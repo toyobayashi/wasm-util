@@ -38,5 +38,7 @@ module.exports = {
     tsconfigRootDir: __dirname,
     createDefaultProgram: true
   },
-  globals: {}
+  globals: {
+    __webpack_public_path__: false
+  }
 }
