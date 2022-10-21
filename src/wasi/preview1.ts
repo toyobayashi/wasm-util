@@ -46,10 +46,6 @@ function copyMemory (targets: Uint8Array[], src: Uint8Array): number {
   return copied
 }
 
-export interface WASI {
-  proc_exit: (rval: exitcode) => WasiErrno
-}
-
 interface MemoryTypedArrays {
   HEAPU8: Uint8Array
   HEAPU16: Uint16Array
@@ -69,10 +65,10 @@ interface WrappedData {
 /** @class */
 // eslint-disable-next-line spaced-comment, @typescript-eslint/no-redeclare
 const WASI = /*#__PURE__*/ (function () {
-  const _memory = new WeakMap<WASI, WebAssembly.Memory>()
-  const _wasi = new WeakMap<WASI, WrappedData>()
+  const _memory = new WeakMap<any, WebAssembly.Memory>()
+  const _wasi = new WeakMap<any, WrappedData>()
 
-  function getMemory (wasi: WASI): MemoryTypedArrays {
+  function getMemory (wasi: any): MemoryTypedArrays {
     const memory = _memory.get(wasi)!
     return {
       HEAPU8: new Uint8Array(memory.buffer),
@@ -85,8 +81,8 @@ const WASI = /*#__PURE__*/ (function () {
 
   const encoder = new TextEncoder()
 
-  const WASI: new (args: string[], env: string[], _preopens: string[], stdio: [number, number, number]) => WASI =
-    function WASI (this: WASI, args: string[], env: string[], _preopens: string[], stdio: [number, number, number]): void {
+  const WASI: new (args: string[], env: string[], _preopens: string[], stdio: readonly [number, number, number]) => any =
+    function WASI (this: any, args: string[], env: string[], _preopens: string[], stdio: readonly [number, number, number]): void {
       _wasi.set(this, {
         fds: new FileDescriptorTable({
           size: 3,
@@ -101,8 +97,8 @@ const WASI = /*#__PURE__*/ (function () {
       })
 
       // eslint-disable-next-line @typescript-eslint/no-this-alias
-      const _this = this;
-      (this as any)._setMemory = function _setMemory (m: WebAssembly.Memory) {
+      const _this = this
+      this._setMemory = function _setMemory (m: WebAssembly.Memory) {
         if (!(m instanceof WebAssembly.Memory)) {
           throw new TypeError('"instance.exports.memory" property must be a WebAssembly.Memory')
         }

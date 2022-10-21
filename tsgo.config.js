@@ -16,7 +16,7 @@ function removeSuffix (str, suffix) {
 }
 
 function createModuleSpecifierTransformer (suffix) {
-  const rewriteExtensions = ['', '.ts']
+  const rewriteExtensions = ['']
   return transformModuleSpecifier({
     targets: [
       {
@@ -50,8 +50,7 @@ module.exports = defineConfig({
         declaration: true
       },
       customTransformersAfter: () => ({
-        before: [createModuleSpecifierTransformer('.js')],
-        after: [transformPureClass]
+        after: [transformPureClass, createModuleSpecifierTransformer('.js')]
       })
     }/* ,
     {
