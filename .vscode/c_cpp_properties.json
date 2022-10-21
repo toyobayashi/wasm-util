@@ -1,0 +1,74 @@
+{
+  "env": {
+    "includePath": [
+      "${default}"
+    ],
+    "defines": []
+  },
+  "configurations": [
+    {
+      "name": "Win32",
+      "defines": ["${defines}", "_DEBUG", "UNICODE", "_UNICODE", "_CRT_SECURE_NO_WARNINGS"],
+      "compilerPath": "${env:VCToolsInstallDir}bin\\Host${env:VSCMD_ARG_HOST_ARCH}\\${env:VSCMD_ARG_TGT_ARCH}\\cl.exe",
+      "windowsSdkVersion": "${env:UCRTVersion}",
+      "intelliSenseMode": "windows-msvc-x64",
+      "cStandard": "c11",
+      "cppStandard": "c++14",
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "Linux",
+      "defines": ["${defines}"],
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "c11",
+      "cppStandard": "c++14",
+      "intelliSenseMode": "linux-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}"
+        ],
+        "limitSymbolsToIncludedHeaders": true,
+        "databaseFilename": ""
+      },
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "macOS",
+      "includePath": ["${includePath}"],
+      "defines": ["${defines}"],
+      "macFrameworkPath": ["/System/Library/Frameworks", "/Library/Frameworks"],
+      "compilerPath": "/usr/bin/clang",
+      "cStandard": "c11",
+      "cppStandard": "c++14",
+      "intelliSenseMode": "macos-clang-x64"
+    },
+    {
+      "name": "Emscripten",
+      "defines": ["${defines}"],
+      "compilerPath": "${env:EMSDK}/upstream/emscripten/emcc",
+      "intelliSenseMode": "clang-x86",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "Emscripten (Win32)",
+      "defines": ["${defines}"],
+      "compilerPath": "${env:EMSDK}/upstream/emscripten/emcc.bat",
+      "intelliSenseMode": "clang-x86",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "includePath": ["${includePath}"]
+    },
+    {
+      "name": "WASI",
+      "defines": ["${defines}"],
+      "compilerPath": "${env:WASI_SDK_PATH}/bin/clang",
+      "intelliSenseMode": "clang-x86",
+      "cStandard": "c11",
+      "cppStandard": "c++14",
+      "includePath": ["${includePath}"]
+    }
+  ],
+  "version": 4
+}

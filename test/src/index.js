@@ -83,8 +83,9 @@ let wasm
 
 const imports = {
   env: {
-    call_js (f) {
-      wasm.__indirect_function_table.get(f)()
+    call_js (f, data) {
+      console.log(data)
+      wasm.__indirect_function_table.get(f)(data)
     }
   }
 }

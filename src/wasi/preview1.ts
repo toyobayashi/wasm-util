@@ -255,6 +255,42 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   }
 
+  WASI.prototype.random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
+    ? function random_get (this: any, buf: Pointer<u8>, buf_len: size): WasiErrno {
+      debug('random_get(%d, %d)', buf, buf_len)
+      buf = Number(buf)
+      if (buf === 0) {
+        return WasiErrno.EINVAL
+      }
+      buf_len = Number(buf_len)
+
+      const { HEAPU8 } = getMemory(this)
+      let pos: number
+      const stride = 65536
+
+      for (pos = 0; pos + stride < buf_len; pos += stride) {
+        crypto.getRandomValues(HEAPU8.subarray(buf + pos, buf + pos + stride))
+      }
+      crypto.getRandomValues(HEAPU8.subarray(buf + pos, buf + buf_len))
+
+      return WasiErrno.ESUCCESS
+    }
+    : function random_get (this: any, buf: Pointer<u8>, buf_len: size): WasiErrno {
+      debug('random_get(%d, %d)', buf, buf_len)
+      buf = Number(buf)
+      if (buf === 0) {
+        return WasiErrno.EINVAL
+      }
+      buf_len = Number(buf_len)
+
+      const { HEAPU8 } = getMemory(this)
+      for (let i = buf; i < buf + buf_len; ++i) {
+        HEAPU8[i] = Math.floor(Math.random() * 256)
+      }
+
+      return WasiErrno.ESUCCESS
+    }
+
   WASI.prototype.proc_exit = function proc_exit (rval: exitcode): WasiErrno {
     debug(`proc_exit(${rval})`)
     return WasiErrno.ESUCCESS
