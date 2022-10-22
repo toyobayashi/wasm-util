@@ -41,11 +41,38 @@ export type AsyncifyExports<T> = T extends Record<string, any>
   : T
 
 /** @public */
-export interface AsyncifyDataAddress {
+export interface AsyncifyOptions {
+  wasm64?: boolean
+  tryAllocate?: boolean | {
+    size?: number
+    name?: string
+  }
+}
+
+interface AsyncifyDataAddress {
   wasm64: boolean
   dataPtr: number
   start: number
   end: number
+}
+
+function tryAllocate (instance: WebAssembly.Instance, wasm64: boolean, size: number, mallocName: string): AsyncifyDataAddress {
+  if (typeof instance.exports[mallocName] !== 'function' || size <= 0) {
+    return {
+      wasm64,
+      dataPtr: 16,
+      start: wasm64 ? 32 : 24,
+      end: 1024
+    }
+  }
+  const malloc = instance.exports[mallocName] as Function
+  const dataPtr: number = wasm64 ? Number(malloc(BigInt(16) + BigInt(size))) : malloc(8 + size)
+  if (dataPtr === 0) {
+    throw new Error('Allocate asyncify data failed')
+  }
+  return wasm64
+    ? { wasm64, dataPtr, start: dataPtr + 16, end: dataPtr + 16 + size }
+    : { wasm64, dataPtr, start: dataPtr + 8, end: dataPtr + 8 + size }
 }
 
 /** @public */
@@ -54,15 +81,7 @@ export class Asyncify {
   private exports: AsyncifiedExports | undefined = undefined
   private dataPtr: number = 0
 
-  public tryAllocate (instance: WebAssembly.Instance, size = 4096, mallocName = 'malloc', wasm64 = false): AsyncifyDataAddress | undefined {
-    if (typeof instance.exports[mallocName] !== 'function') return
-    const malloc = instance.exports[mallocName] as Function
-    const dataPtr: number = wasm64 ? Number(malloc(BigInt(16))) : malloc(8)
-    const buffer: number = wasm64 ? Number(malloc(BigInt(size))) : malloc(size)
-    return { wasm64, dataPtr, start: buffer, end: buffer + size }
-  }
-
-  public init (imports: WebAssembly.Imports, instance: WebAssembly.Instance, address?: AsyncifyDataAddress): void {
+  public init (imports: WebAssembly.Imports, instance: WebAssembly.Instance, options: AsyncifyOptions): void {
     if (instance instanceof Instance) return
     const exports = instance.exports
     const memory = exports.memory || (imports.env?.memory)
@@ -74,16 +93,25 @@ export class Asyncify {
         throw new TypeError('Invalid asyncify wasm')
       }
     }
-    if (!address) {
+    let address: AsyncifyDataAddress
+    const wasm64 = Boolean(options.wasm64)
+
+    if (!options.tryAllocate) {
       address = {
-        wasm64: false,
+        wasm64,
         dataPtr: 16,
-        start: 24,
+        start: wasm64 ? 32 : 24,
         end: 1024
+      }
+    } else {
+      if (options.tryAllocate === true) {
+        address = tryAllocate(instance, wasm64, 4096, 'malloc')
+      } else {
+        address = tryAllocate(instance, wasm64, options.tryAllocate.size ?? 4096, options.tryAllocate.name ?? 'malloc')
       }
     }
     this.dataPtr = address.dataPtr
-    if (address.wasm64) {
+    if (wasm64) {
       new BigInt64Array(memory.buffer, this.dataPtr).set([BigInt(address.start), BigInt(address.end)])
     } else {
       new Int32Array(memory.buffer, this.dataPtr).set([address.start, address.end])
@@ -167,10 +195,11 @@ export class Asyncify {
 
 /** @public */
 export class Instance extends WebAssembly.Instance {
-  constructor (module: WebAssembly.Module, importObject: WebAssembly.Imports) {
+  constructor (options: AsyncifyOptions, module: WebAssembly.Module, importObject?: WebAssembly.Imports) {
+    importObject = importObject ?? {}
     const asyncify = new Asyncify()
     super(module, asyncify.wrapImports(importObject))
-    asyncify.init(importObject, this)
+    asyncify.init(importObject, this, options)
   }
 
   get exports (): WebAssembly.Exports {

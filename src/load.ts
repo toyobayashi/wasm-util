@@ -1,5 +1,5 @@
 import { Asyncify } from './asyncify'
-import type { AsyncifyDataAddress } from './asyncify'
+import type { AsyncifyOptions } from './asyncify'
 
 async function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Imports): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   const response = await fetch(urlOrBuffer)
@@ -8,20 +8,11 @@ async function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Impor
   return source
 }
 
-function initAsyncify (
-  asyncifyHelper: Asyncify,
-  imports: WebAssembly.Imports,
-  instance: WebAssembly.Instance,
-  asyncify: true | AsyncifyDataAddress
-): void {
-  asyncifyHelper.init(imports, instance, typeof asyncify === 'boolean' ? asyncifyHelper.tryAllocate(instance) : asyncify)
-}
-
 /** @public */
 export async function load (
   urlOrBuffer: string | URL | BufferSource,
   imports?: WebAssembly.Imports,
-  asyncify?: boolean | AsyncifyDataAddress
+  asyncify?: AsyncifyOptions
 ): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   if (imports && typeof imports !== 'object') {
     throw new TypeError('imports must be an object or undefined')
@@ -38,7 +29,7 @@ export async function load (
 
   if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
     source = await WebAssembly.instantiate(urlOrBuffer, imports)
-    if (asyncify) initAsyncify(asyncifyHelper!, imports, source.instance, asyncify)
+    if (asyncify) asyncifyHelper!.init(imports, source.instance, asyncify)
     return source
   }
 
@@ -55,7 +46,7 @@ export async function load (
   } else {
     source = await fetchWasm(urlOrBuffer, imports)
   }
-  if (asyncify) initAsyncify(asyncifyHelper!, imports, source.instance, asyncify)
+  if (asyncify) asyncifyHelper!.init(imports, source.instance, asyncify)
   return source
 }
 
@@ -63,7 +54,7 @@ export async function load (
 export function loadSync (
   buffer: BufferSource,
   imports?: WebAssembly.Imports,
-  asyncify?: boolean | AsyncifyDataAddress
+  asyncify?: AsyncifyOptions
 ): WebAssembly.WebAssemblyInstantiatedSource {
   if ((buffer instanceof ArrayBuffer) && !ArrayBuffer.isView(buffer)) {
     throw new TypeError('Invalid source')
@@ -84,6 +75,6 @@ export function loadSync (
   const module = new WebAssembly.Module(buffer)
   const instance = new WebAssembly.Instance(module, imports)
   const source = { instance, module }
-  if (asyncify) initAsyncify(asyncifyHelper!, imports, instance, asyncify)
+  if (asyncify) asyncifyHelper!.init(imports, instance, asyncify)
   return source
 }

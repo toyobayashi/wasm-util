@@ -24,7 +24,7 @@ set_target_properties(${TARGET_ASYNCIFY_EXE} PROPERTIES SUFFIX ".wasm")
 
 target_link_options(${TARGET_ASYNCIFY_EXE} PRIVATE
   "-v"
-  "-Wl,--initial-memory=16777216,--export-dynamic,--import-undefined"
+  "-Wl,--initial-memory=16777216,--export-dynamic,--export=malloc,--import-undefined"
 )
 
 set(ASYNCIFY_FLAGS "--asyncify" "--pass-arg=asyncify-imports@env.async_sleep")

@@ -20,12 +20,16 @@ const wasiOptions = {
   }
 }
 
+const asyncifyOptions = {
+  tryAllocate: true
+}
+
 if (typeof __webpack_public_path__ !== 'undefined') {
   // webpack
   const wasmUrl = (await import('../../build/b.wasm')).default
   const { WASI } = await import('@tybys/wasm-util')
   const wasi = new WASI(wasiOptions)
-  const { instance } = await load(wasmUrl, { ...imports, wasi_snapshot_preview1: wasi.wasiImport }, true)
+  const { instance } = await load(wasmUrl, { ...imports, wasi_snapshot_preview1: wasi.wasiImport }, asyncifyOptions)
   // wasm = instance.exports
   await wasi.start(instance)
 } else {
@@ -34,7 +38,7 @@ if (typeof __webpack_public_path__ !== 'undefined') {
   const url = new URL('../../build/b.wasm', import.meta.url)
   const { WASI } = isNodeJs ? await import('node:wasi') : await import('@tybys/wasm-util')
   const wasi = new WASI(wasiOptions)
-  const { instance } = await load(isNodeJs ? await (await import('node:fs/promises')).readFile(url) : url, { ...imports, wasi_snapshot_preview1: wasi.wasiImport }, true)
+  const { instance } = await load(isNodeJs ? await (await import('node:fs/promises')).readFile(url) : url, { ...imports, wasi_snapshot_preview1: wasi.wasiImport }, asyncifyOptions)
   // wasm = instance.exports
   await wasi.start(instance)
 }
