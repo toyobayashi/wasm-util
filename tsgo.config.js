@@ -35,6 +35,16 @@ const root = __dirname
 const name = path.posix.basename(require('./package.json').name)
 const entry = path.resolve(root, 'lib/esm-bundler/index.js')
 const dist = path.resolve(root, 'dist')
+const output = {
+  name,
+  path: dist
+}
+const terserOptions = {
+  output: {
+    beautify: false,
+    comments: false
+  }
+}
 // const mpDist = path.resolve(root, require('./package.json').miniprogram || 'miniprogram_dist')
 
 module.exports = defineConfig({
@@ -82,21 +92,41 @@ module.exports = defineConfig({
   bundleTargets: [
     {
       entry,
-      output: {
-        name,
-        path: dist
+      output,
+      define: {
+        'process.env.NODE_DEBUG_NATIVE': '"wasi"'
       },
       minify: false,
       type: 'umd'
     },
     {
       entry,
-      output: {
-        name,
-        path: dist
+      output,
+      define: {
+        'process.env.NODE_DEBUG_NATIVE': 'undefined'
       },
       minify: true,
+      terserOptions,
       type: 'umd'
+    },
+    {
+      entry,
+      output,
+      define: {
+        'process.env.NODE_DEBUG_NATIVE': '"wasi"'
+      },
+      minify: false,
+      type: 'esm'
+    },
+    {
+      entry,
+      output,
+      define: {
+        'process.env.NODE_DEBUG_NATIVE': 'undefined'
+      },
+      minify: true,
+      terserOptions,
+      type: 'esm'
     },
     /* {
       entry,
@@ -109,10 +139,7 @@ module.exports = defineConfig({
     }, */
     {
       entry,
-      output: {
-        name,
-        path: dist
-      },
+      output,
       minify: false,
       type: 'esm-bundler',
       resolveOnly: [/^(?!(tslib)).*?$/]

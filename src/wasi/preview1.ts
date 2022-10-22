@@ -21,12 +21,8 @@ import type {
 import { FileDescriptorTable, concatBuffer } from './fd'
 
 function debug (...args: any[]): void {
-  if (typeof process === 'undefined' || (process as any).type === 'renderer' || (process as any).browser === true || (process as any).__nwjs) {
+  if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
     console.debug(...args)
-  } else {
-    if (process.env.DEBUG) {
-      console.debug(...args)
-    }
   }
 }
 
