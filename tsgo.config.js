@@ -97,7 +97,9 @@ module.exports = defineConfig({
         'process.env.NODE_DEBUG_NATIVE': '"wasi"'
       },
       minify: false,
-      type: 'umd'
+      type: 'umd',
+      resolveOnly: [/^(?!(memfs-browser)).*?$/],
+      globals: { 'memfs-browser': 'memfs' }
     },
     {
       entry,
@@ -107,7 +109,9 @@ module.exports = defineConfig({
       },
       minify: true,
       terserOptions,
-      type: 'umd'
+      type: 'umd',
+      resolveOnly: [/^(?!(memfs-browser)).*?$/],
+      globals: { 'memfs-browser': 'memfs' }
     },
     {
       entry,
@@ -116,7 +120,8 @@ module.exports = defineConfig({
         'process.env.NODE_DEBUG_NATIVE': '"wasi"'
       },
       minify: false,
-      type: 'esm'
+      type: 'esm',
+      resolveOnly: [/^(?!(memfs-browser)).*?$/]
     },
     {
       entry,
@@ -126,7 +131,8 @@ module.exports = defineConfig({
       },
       minify: true,
       terserOptions,
-      type: 'esm'
+      type: 'esm',
+      resolveOnly: [/^(?!(memfs-browser)).*?$/]
     },
     /* {
       entry,
@@ -142,7 +148,7 @@ module.exports = defineConfig({
       output,
       minify: false,
       type: 'esm-bundler',
-      resolveOnly: [/^(?!(tslib)).*?$/]
+      resolveOnly: [/^(?!(memfs-browser)).*?$/]
     }
   ]
 })
