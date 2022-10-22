@@ -1,5 +1,9 @@
+import { vol } from 'memfs-browser'
+import type { Volume } from 'memfs-browser'
+
 import {
   WasiErrno,
+  WasiFileType,
   WasiRights,
   WasiWhence
 } from './types'
@@ -46,6 +50,16 @@ function copyMemory (targets: Uint8Array[], src: Uint8Array): number {
   return copied
 }
 
+function toFileType (stat: ReturnType<InstanceType<typeof Volume>['statSync']>): bigint {
+  if (stat!.isBlockDevice()) return BigInt(WasiFileType.BLOCK_DEVICE)
+  if (stat!.isCharacterDevice()) return BigInt(WasiFileType.CHARACTER_DEVICE)
+  if (stat!.isDirectory()) return BigInt(WasiFileType.DIRECTORY)
+  if (stat!.isSocket()) return BigInt(WasiFileType.SOCKET_STREAM)
+  if (stat!.isFile()) return BigInt(WasiFileType.REGULAR_FILE)
+  if (stat!.isSymbolicLink()) return BigInt(WasiFileType.SYMBOLIC_LINK)
+  return BigInt(WasiFileType.UNKNOWN)
+}
+
 interface MemoryTypedArrays {
   HEAPU8: Uint8Array
   HEAPU16: Uint16Array
@@ -68,6 +82,8 @@ const WASI = /*#__PURE__*/ (function () {
   const _memory = new WeakMap<any, WebAssembly.Memory>()
   const _wasi = new WeakMap<any, WrappedData>()
 
+  vol.fromJSON({}, '/')
+
   function getMemory (wasi: any): MemoryTypedArrays {
     const memory = _memory.get(wasi)!
     return {
@@ -80,6 +96,7 @@ const WASI = /*#__PURE__*/ (function () {
   }
 
   const encoder = new TextEncoder()
+  const decoder = new TextDecoder()
 
   const WASI: new (args: string[], env: string[], _preopens: string[], stdio: readonly [number, number, number]) => any =
     function WASI (this: any, args: string[], env: string[], _preopens: string[], stdio: readonly [number, number, number]): void {
@@ -290,6 +307,78 @@ const WASI = /*#__PURE__*/ (function () {
 
       return WasiErrno.ESUCCESS
     }
+
+  WASI.prototype.fd_prestat_get = function fd_prestat_get (fd: Handle, prestat: Pointer): WasiErrno {
+    debug('fd_prestat_get(%d, %d)', fd, prestat)
+    prestat = Number(prestat)
+    if (prestat === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU32 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const { value: fileDescriptor, errno } = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    if (errno !== WasiErrno.ESUCCESS) return errno
+    if (fileDescriptor.preopen !== 1) return WasiErrno.EINVAL
+    HEAPU32[prestat] = 0
+    HEAPU32[prestat + 1] = encoder.encode(fileDescriptor.path).length + 1
+    return WasiErrno.ESUCCESS
+  }
+
+  WASI.prototype.fd_prestat_dir_name = function fd_prestat_dir_name (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
+    debug('fd_prestat_dir_name(%d, %d, %d)', fd, path, path_len)
+    path = Number(path)
+    path_len = Number(path_len)
+    if (path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const { value: fileDescriptor, errno } = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    if (errno !== WasiErrno.ESUCCESS) return errno
+    if (fileDescriptor.preopen !== 1) return WasiErrno.EBADF
+    const buffer = encoder.encode(fileDescriptor.path + '\0')
+    const size = buffer.length
+    if (size > path_len) return WasiErrno.ENOBUFS
+    HEAPU8.set(buffer, path)
+    return WasiErrno.ESUCCESS
+  }
+
+  WASI.prototype.path_filestat_get = function path_filestat_get (fd: Handle, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
+    debug('path_filestat_get(%d, %d, %d, %d, %d)', fd, flags, path, filestat)
+    path = Number(path)
+    path_len = Number(path_len)
+    filestat = Number(filestat)
+    if (path === 0 || filestat === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8, HEAPU64 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const { /* value: fileDescriptor, */ errno } = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
+    if (errno !== WasiErrno.ESUCCESS) return errno
+    const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+
+    // TODO
+
+    let stat
+    if ((flags & 1) === 1) {
+      stat = vol.statSync(pathString, { bigint: true })
+    } else {
+      stat = vol.lstatSync(pathString, { bigint: true })
+    }
+
+    HEAPU64[filestat] = stat.dev
+    HEAPU64[filestat + 8] = stat.ino
+    HEAPU64[filestat + 16] = toFileType(stat)
+    HEAPU64[filestat + 24] = stat.nlink
+    HEAPU64[filestat + 32] = stat.size
+    HEAPU64[filestat + 40] = stat.atimeMs * BigInt(1000000)
+    HEAPU64[filestat + 48] = stat.mtimeMs * BigInt(1000000)
+    HEAPU64[filestat + 56] = stat.ctimeMs * BigInt(1000000)
+    return WasiErrno.ESUCCESS
+  }
 
   WASI.prototype.proc_exit = function proc_exit (rval: exitcode): WasiErrno {
     debug(`proc_exit(${rval})`)

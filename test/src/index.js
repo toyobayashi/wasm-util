@@ -1,7 +1,7 @@
 /* eslint-disable camelcase */
 import { load } from '@tybys/wasm-util'
 
-function wrap (wasm) {
+/* function wrap (wasm) {
   const {
     memory,
     malloc,
@@ -77,7 +77,7 @@ function wrap (wasm) {
     b64Encode,
     b64Decode
   }
-}
+} */
 
 let wasm
 
@@ -117,18 +117,18 @@ if (typeof __webpack_public_path__ !== 'undefined') {
   await wasi.start(instance)
 }
 
-async function main (wrappedExports) {
-  const {
-    b64Encode,
-    b64Decode
-  } = wrappedExports
+// async function main (wrappedExports) {
+//   const {
+//     b64Encode,
+//     b64Decode
+//   } = wrappedExports
 
-  const input = 'Hello wasi\n'
-  const b64Str = b64Encode(input)
-  console.log(b64Str)
-  const origin = b64Decode(b64Str)
-  const originStr = new TextDecoder().decode(origin)
-  console.log(originStr === input)
-}
+//   const input = 'Hello wasi\n'
+//   const b64Str = b64Encode(input)
+//   console.log(b64Str)
+//   const origin = b64Decode(b64Str)
+//   const originStr = new TextDecoder().decode(origin)
+//   console.log(originStr === input)
+// }
 
-await main(wrap(wasm))
+// await main(wrap(wasm))
