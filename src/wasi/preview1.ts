@@ -1,9 +1,7 @@
-import { vol } from 'memfs-browser'
-import type { Volume } from 'memfs-browser'
+import { vol, path as nodePath } from 'memfs-browser'
 
 import {
   WasiErrno,
-  WasiFileType,
   WasiRights,
   WasiWhence
 } from './types'
@@ -18,7 +16,7 @@ import type {
   exitcode
 } from './types'
 
-import { FileDescriptorTable, concatBuffer } from './fd'
+import { FileDescriptorTable, concatBuffer, toFileType } from './fd'
 
 function debug (...args: any[]): void {
   if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
@@ -46,16 +44,6 @@ function copyMemory (targets: Uint8Array[], src: Uint8Array): number {
   return copied
 }
 
-function toFileType (stat: ReturnType<InstanceType<typeof Volume>['statSync']>): bigint {
-  if (stat!.isBlockDevice()) return BigInt(WasiFileType.BLOCK_DEVICE)
-  if (stat!.isCharacterDevice()) return BigInt(WasiFileType.CHARACTER_DEVICE)
-  if (stat!.isDirectory()) return BigInt(WasiFileType.DIRECTORY)
-  if (stat!.isSocket()) return BigInt(WasiFileType.SOCKET_STREAM)
-  if (stat!.isFile()) return BigInt(WasiFileType.REGULAR_FILE)
-  if (stat!.isSymbolicLink()) return BigInt(WasiFileType.SYMBOLIC_LINK)
-  return BigInt(WasiFileType.UNKNOWN)
-}
-
 interface MemoryTypedArrays {
   HEAPU8: Uint8Array
   HEAPU16: Uint16Array
@@ -72,13 +60,21 @@ interface WrappedData {
   envBuf: Uint8Array
 }
 
+export interface Preopen {
+  mappedPath: string
+  realPath: string
+}
+
 /** @class */
 // eslint-disable-next-line spaced-comment, @typescript-eslint/no-redeclare
 const WASI = /*#__PURE__*/ (function () {
   const _memory = new WeakMap<any, WebAssembly.Memory>()
   const _wasi = new WeakMap<any, WrappedData>()
 
-  vol.fromJSON({}, '/')
+  vol.fromJSON({
+    '/': null,
+    '/home/wasi': null
+  }, '/')
 
   function getMemory (wasi: any): MemoryTypedArrays {
     const memory = _memory.get(wasi)!
@@ -94,20 +90,27 @@ const WASI = /*#__PURE__*/ (function () {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
 
-  const WASI: new (args: string[], env: string[], _preopens: string[], stdio: readonly [number, number, number]) => any =
-    function WASI (this: any, args: string[], env: string[], _preopens: string[], stdio: readonly [number, number, number]): void {
+  const WASI: new (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number]) => any =
+    function WASI (this: any, args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number]): void {
+      const fds = new FileDescriptorTable({
+        size: 3,
+        in: stdio[0],
+        out: stdio[1],
+        err: stdio[2]
+      })
       _wasi.set(this, {
-        fds: new FileDescriptorTable({
-          size: 3,
-          in: stdio[0],
-          out: stdio[1],
-          err: stdio[2]
-        }),
+        fds,
         args,
         argvBuf: encoder.encode(args.join('\0') + '\0'),
         env,
         envBuf: encoder.encode(env.join('\0') + '\0')
       })
+
+      for (let i = 0; i < preopens.length; ++i) {
+        const realPath = vol.realpathSync(preopens[i].realPath, 'utf8') as string
+        const fd = vol.openSync(realPath, 'r', 0o666)
+        fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const _this = this
@@ -229,13 +232,13 @@ const WASI = /*#__PURE__*/ (function () {
       return errno
     }
 
-    const buffer = (fileDescriptor as any).stream.read()
+    const buffer = (fileDescriptor as any).stream?.read()
     const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
       const buf = HEAP32[((iovs as number) + (i * 8)) >> 2]
       const bufLen = HEAPU32[(((iovs as number) + (i * 8)) >> 2) + 1]
       return HEAPU8.subarray(buf, buf + bufLen)
     })
-    const nread = copyMemory(ioVecs, buffer)
+    const nread = buffer ? copyMemory(ioVecs, buffer) : 0
 
     HEAPU32[size >> 2] = nread
     return WasiErrno.ESUCCESS
@@ -262,7 +265,7 @@ const WASI = /*#__PURE__*/ (function () {
       const bufLen = HEAPU32[(((iovs as number) + (i * 8)) >> 2) + 1]
       return HEAPU8.subarray(buf, buf + bufLen)
     }))
-    const nwritten = (fileDescriptor as any).stream.write(buffer)
+    const nwritten = (fileDescriptor as any).stream?.write(buffer) ?? 0
 
     HEAPU32[size >> 2] = nwritten
     return WasiErrno.ESUCCESS
@@ -316,8 +319,9 @@ const WASI = /*#__PURE__*/ (function () {
     const { value: fileDescriptor, errno } = wasi.fds.get(fd, BigInt(0), BigInt(0))
     if (errno !== WasiErrno.ESUCCESS) return errno
     if (fileDescriptor.preopen !== 1) return WasiErrno.EINVAL
-    HEAPU32[prestat] = 0
-    HEAPU32[prestat + 1] = encoder.encode(fileDescriptor.path).length + 1
+    // preopen type is dir(0)
+    HEAPU32[prestat >> 2] = 0
+    HEAPU32[(prestat + 4) >> 2] = encoder.encode(fileDescriptor.path).length + 1
     return WasiErrno.ESUCCESS
   }
 
@@ -342,7 +346,7 @@ const WASI = /*#__PURE__*/ (function () {
   }
 
   WASI.prototype.path_filestat_get = function path_filestat_get (fd: Handle, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
-    debug('path_filestat_get(%d, %d, %d, %d, %d)', fd, flags, path, filestat)
+    debug('path_filestat_get(%d, %d, %d, %d, %d)', fd, flags, path, path_len, filestat)
     path = Number(path)
     path_len = Number(path_len)
     filestat = Number(filestat)
@@ -352,11 +356,11 @@ const WASI = /*#__PURE__*/ (function () {
     const { HEAPU8, HEAPU64 } = getMemory(this)
 
     const wasi = _wasi.get(this)!
-    const { /* value: fileDescriptor, */ errno } = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
+    const { value: fileDescriptor, errno } = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
     if (errno !== WasiErrno.ESUCCESS) return errno
-    const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+    let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
-    // TODO
+    pathString = nodePath.resolve(fileDescriptor.realPath, pathString)
 
     let stat
     if ((flags & 1) === 1) {
@@ -365,14 +369,14 @@ const WASI = /*#__PURE__*/ (function () {
       stat = vol.lstatSync(pathString, { bigint: true })
     }
 
-    HEAPU64[filestat] = stat.dev
-    HEAPU64[filestat + 8] = stat.ino
-    HEAPU64[filestat + 16] = toFileType(stat)
-    HEAPU64[filestat + 24] = stat.nlink
-    HEAPU64[filestat + 32] = stat.size
-    HEAPU64[filestat + 40] = stat.atimeMs * BigInt(1000000)
-    HEAPU64[filestat + 48] = stat.mtimeMs * BigInt(1000000)
-    HEAPU64[filestat + 56] = stat.ctimeMs * BigInt(1000000)
+    HEAPU64[filestat >> 3] = stat.dev
+    HEAPU64[(filestat + 8) >> 3] = stat.ino
+    HEAPU64[(filestat + 16) >> 3] = BigInt(toFileType(stat))
+    HEAPU64[(filestat + 24) >> 3] = stat.nlink
+    HEAPU64[(filestat + 32) >> 3] = stat.size
+    HEAPU64[(filestat + 40) >> 3] = stat.atimeMs * BigInt(1000000)
+    HEAPU64[(filestat + 48) >> 3] = stat.mtimeMs * BigInt(1000000)
+    HEAPU64[(filestat + 56) >> 3] = stat.ctimeMs * BigInt(1000000)
     return WasiErrno.ESUCCESS
   }
 

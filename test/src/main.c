@@ -39,6 +39,10 @@ int main(int argc, char** argv) {
   char cwd[256] = { 0 };
   getcwd(cwd, 256);
   printf("CWD: %s\n", cwd);
+  int r = chdir("/home/wasi");
+  printf("chdir: %d\n", errno);
+  getcwd(cwd, 256);
+  printf("CWD: %s\n", cwd);
 
   struct stat st;
   lstat(cwd, &st);

@@ -95,6 +95,9 @@ const wasiOptions = {
   env: {
     NODE_ENV: 'development',
     WASI_SDK_PATH: '/tmp/wasi-sdk'
+  },
+  preopens: {
+    '/': '/'
   }
 }
 

@@ -1,4 +1,5 @@
 import { WASI as _WASI } from './preview1'
+import type { Preopen } from './preview1'
 import type { exitcode } from './types'
 
 import {
@@ -78,12 +79,12 @@ export class WASI {
       })
     }
 
-    const preopens: string[] = []
+    const preopens: Preopen[] = []
     if (options.preopens !== undefined) {
       validateObject(options.preopens, 'options.preopens')
       Object.entries(options.preopens).forEach(
         ({ 0: key, 1: value }) =>
-          preopens.push(String(key), String(value))
+          preopens.push({ mappedPath: String(key), realPath: String(value) })
       )
     }
 

@@ -1,3 +1,5 @@
+import { vol } from 'memfs-browser'
+import type { Volume } from 'memfs-browser'
 import {
   WasiErrno,
   WasiFileType,
@@ -110,20 +112,19 @@ class StandardOutput extends Stream {
   }
 }
 
-function insertStdio (
-  table: FileDescriptorTable,
-  fd: number,
-  expected: number,
-  name: string,
-  stream: StandardInput | StandardOutput
-): FileDescriptor {
-  const type = WasiFileType.CHARACTER_DEVICE
-  const { base, inheriting } = getRights(fd, 2, type)
-  const wrap = table.insert(fd, name, name, type, base, inheriting, 0, stream)
-  if (wrap.id !== expected) {
-    throw new WasiError(`id: ${wrap.id} !== expected: ${expected}`, WasiErrno.EBADF)
-  }
-  return wrap
+export function toFileType (stat: ReturnType<InstanceType<typeof Volume>['statSync']>): WasiFileType {
+  if (stat!.isBlockDevice()) return WasiFileType.BLOCK_DEVICE
+  if (stat!.isCharacterDevice()) return WasiFileType.CHARACTER_DEVICE
+  if (stat!.isDirectory()) return WasiFileType.DIRECTORY
+  if (stat!.isSocket()) return WasiFileType.SOCKET_STREAM
+  if (stat!.isFile()) return WasiFileType.REGULAR_FILE
+  if (stat!.isSymbolicLink()) return WasiFileType.SYMBOLIC_LINK
+  return WasiFileType.UNKNOWN
+}
+
+function getFileTypeByFd (fd: number): WasiFileType {
+  const stat: any = vol.fstatSync(fd)
+  return toFileType(stat)
 }
 
 export interface FileDescriptorTableOptions {
@@ -137,14 +138,31 @@ export class FileDescriptorTable {
   public used: number
   public size: number
   public fds: FileDescriptor[]
+  public stdio: [number, number, number]
   constructor (options: FileDescriptorTableOptions) {
     this.used = 0
     this.size = options.size
     this.fds = Array(options.size)
+    this.stdio = [options.in, options.out, options.err]
 
-    insertStdio(this, options.in, 0, '<stdin>', new StandardInput())
-    insertStdio(this, options.out, 1, '<stdout>', new StandardOutput(console.log))
-    insertStdio(this, options.err, 2, '<stderr>', new StandardOutput(console.error))
+    this.insertStdio(options.in, 0, '<stdin>', new StandardInput())
+    this.insertStdio(options.out, 1, '<stdout>', new StandardOutput(console.log))
+    this.insertStdio(options.err, 2, '<stderr>', new StandardOutput(console.error))
+  }
+
+  private insertStdio (
+    fd: number,
+    expected: number,
+    name: string,
+    stream: StandardInput | StandardOutput
+  ): FileDescriptor {
+    const type = WasiFileType.CHARACTER_DEVICE
+    const { base, inheriting } = getRights(this.stdio, fd, 2, type)
+    const wrap = this.insert(fd, name, name, type, base, inheriting, 0, stream)
+    if (wrap.id !== expected) {
+      throw new WasiError(`id: ${wrap.id} !== expected: ${expected}`, WasiErrno.EBADF)
+    }
+    return wrap
   }
 
   insert (
@@ -155,7 +173,7 @@ export class FileDescriptorTable {
     rightsBase: bigint,
     rightsInheriting: bigint,
     preopen: number,
-    stream: Stream
+    stream?: Stream
   ): FileDescriptor {
     let index = -1
     if (this.used >= this.size) {
@@ -182,10 +200,22 @@ export class FileDescriptorTable {
       rightsInheriting,
       preopen
     )
-    entry.stream = stream
+    if (stream) entry.stream = stream
     this.fds[index] = entry
     this.used++
     return entry
+  }
+
+  insertPreopen (fd: number, mappedPath: string, realPath: string): FileDescriptor {
+    const type = getFileTypeByFd(fd)
+    if (type !== WasiFileType.DIRECTORY) {
+      throw new WasiError(`Preopen not dir: ["${mappedPath}", "${realPath}"]`, WasiErrno.ENOTDIR)
+    }
+    const result = getRights(this.stdio, fd, 0, type)
+    if (result.errno !== WasiErrno.ESUCCESS) {
+      throw new WasiError('Preopen get rights failed', result.errno)
+    }
+    return this.insert(fd, mappedPath, realPath, type, result.base, result.inheriting, 1)
   }
 
   get (id: number, base: bigint, inheriting: bigint): Result<FileDescriptor> {

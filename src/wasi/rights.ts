@@ -95,14 +95,15 @@ export interface GetRightsResult {
   errno: WasiErrno
 }
 
-export function getRights (_fd: number, flags: number, type: WasiFileType): GetRightsResult {
+export function getRights (stdio: number[], fd: number, flags: number, type: WasiFileType): GetRightsResult {
   const ret: GetRightsResult = {
     base: BigInt(0),
     inheriting: BigInt(0),
-    errno: WasiErrno.EINVAL
+    errno: WasiErrno.ESUCCESS
   }
 
   if (type === WasiFileType.UNKNOWN) {
+    ret.errno = WasiErrno.EINVAL
     return ret
   }
 
@@ -124,13 +125,13 @@ export function getRights (_fd: number, flags: number, type: WasiFileType): GetR
       break
 
     case WasiFileType.CHARACTER_DEVICE:
-      // if (true/* uv_guess_handle(fd) == UV_TTY */) {
-      ret.base = TTY_BASE
-      ret.inheriting = TTY_INHERITING
-      // } else {
-      //   ret.base = CHARACTER_DEVICE_BASE
-      //   ret.inheriting = CHARACTER_DEVICE_INHERITING
-      // }
+      if (stdio.indexOf(fd) !== -1) {
+        ret.base = TTY_BASE
+        ret.inheriting = TTY_INHERITING
+      } else {
+        ret.base = CHARACTER_DEVICE_BASE
+        ret.inheriting = CHARACTER_DEVICE_INHERITING
+      }
       break
 
     case WasiFileType.BLOCK_DEVICE:
