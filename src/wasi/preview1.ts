@@ -401,6 +401,10 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
+  fd_fdstat_set_flags = function (): WasiErrno {
+    return WasiErrno.ENOSYS
+  }
+
   proc_exit = syscallWrap(function (rval: exitcode): WasiErrno {
     debug(`proc_exit(${rval})`)
     return WasiErrno.ESUCCESS

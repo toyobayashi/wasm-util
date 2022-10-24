@@ -44,6 +44,10 @@ int main(int argc, char** argv) {
   getcwd(cwd, 256);
   printf("CWD: %s\n", cwd);
 
+  FILE* f = fopen("./.npmrc", "w");
+  fprintf(f, "file\n");
+  fclose(f);
+
   struct stat st;
   lstat(cwd, &st);
 
