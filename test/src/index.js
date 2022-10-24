@@ -1,5 +1,6 @@
 /* eslint-disable camelcase */
 import { load } from '@tybys/wasm-util'
+import { Volume, createFsFromVolume } from 'memfs-browser'
 
 /* function wrap (wasm) {
   const {
@@ -98,6 +99,12 @@ const wasiOptions = {
   },
   preopens: {
     '/': '/'
+  },
+  filesystem: {
+    type: 'memfs',
+    fs: createFsFromVolume(Volume.fromJSON({
+      '/home/wasi': null
+    }, '/'))
   }
 }
 

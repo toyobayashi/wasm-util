@@ -16,6 +16,12 @@ export function validateBoolean (value: unknown, name: string): void {
   }
 }
 
+export function validateString (value: unknown, name: string): void {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${name} must be a string. Received ${value === null ? 'null' : typeof value}`)
+  }
+}
+
 export function validateFunction (value: unknown, name: string): void {
   if (typeof value !== 'function') {
     throw new TypeError(`${name} must be a function. Received ${value === null ? 'null' : typeof value}`)

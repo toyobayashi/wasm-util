@@ -1,4 +1,6 @@
-import { vol, path as nodePath } from 'memfs-browser'
+// import { vol } from 'memfs-browser'
+import type { IFs } from 'memfs-browser'
+import { resolve } from './path'
 
 import {
   WasiErrno,
@@ -61,6 +63,7 @@ interface WrappedData {
   argvBuf: Uint8Array
   env: string[]
   envBuf: Uint8Array
+  fs?: IFs
 }
 
 export interface Preopen {
@@ -70,11 +73,6 @@ export interface Preopen {
 
 const _memory = new WeakMap<WASI, WebAssembly.Memory>()
 const _wasi = new WeakMap<WASI, WrappedData>()
-
-vol.fromJSON({
-  '/': null,
-  '/home/wasi': null
-}, '/')
 
 function getMemory (wasi: WASI): MemoryTypedArrays {
   const memory = _memory.get(wasi)!
@@ -118,25 +116,31 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 export class WASI {
-  constructor (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number]) {
+  constructor (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number], filesystem: false | { type: 'memfs'; fs: IFs }) {
+    const fs = filesystem ? filesystem.fs : undefined
     const fds = new FileDescriptorTable({
       size: 3,
       in: stdio[0],
       out: stdio[1],
-      err: stdio[2]
+      err: stdio[2],
+      fs
     })
     _wasi.set(this, {
       fds,
       args,
       argvBuf: encoder.encode(args.join('\0') + '\0'),
       env,
-      envBuf: encoder.encode(env.join('\0') + '\0')
+      envBuf: encoder.encode(env.join('\0') + '\0'),
+      fs
     })
 
-    for (let i = 0; i < preopens.length; ++i) {
-      const realPath = vol.realpathSync(preopens[i].realPath, 'utf8') as string
-      const fd = vol.openSync(realPath, 'r', 0o666)
-      fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
+    if (preopens.length > 0) {
+      if (!filesystem || !fs) throw new Error('filesystem is disabled')
+      for (let i = 0; i < preopens.length; ++i) {
+        const realPath = fs.realpathSync(preopens[i].realPath, 'utf8') as string
+        const fd = fs.openSync(realPath, 'r', 0o666)
+        fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
+      }
     }
   }
 
@@ -377,13 +381,13 @@ export class WASI {
     const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
     let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
-    pathString = nodePath.resolve(fileDescriptor.realPath, pathString)
+    pathString = resolve(fileDescriptor.realPath, pathString)
 
     let stat
     if ((flags & 1) === 1) {
-      stat = vol.statSync(pathString, { bigint: true })
+      stat = wasi.fs!.statSync(pathString, { bigint: true })
     } else {
-      stat = vol.lstatSync(pathString, { bigint: true })
+      stat = wasi.fs!.lstatSync(pathString, { bigint: true })
     }
 
     HEAPU64[filestat >> 3] = stat.dev

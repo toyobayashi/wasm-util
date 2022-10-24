@@ -1,5 +1,4 @@
-import { vol } from 'memfs-browser'
-import type { Volume } from 'memfs-browser'
+import type { Volume, IFs } from 'memfs-browser'
 import {
   WasiErrno,
   WasiFileType,
@@ -121,16 +120,12 @@ export function toFileType (stat: ReturnType<InstanceType<typeof Volume>['statSy
   return WasiFileType.UNKNOWN
 }
 
-function getFileTypeByFd (fd: number): WasiFileType {
-  const stat: any = vol.fstatSync(fd)
-  return toFileType(stat)
-}
-
 export interface FileDescriptorTableOptions {
   size: number
   in: number
   out: number
   err: number
+  fs?: IFs
 }
 
 export class FileDescriptorTable {
@@ -138,11 +133,13 @@ export class FileDescriptorTable {
   public size: number
   public fds: FileDescriptor[]
   public stdio: [number, number, number]
+  private readonly fs: IFs | undefined
   constructor (options: FileDescriptorTableOptions) {
     this.used = 0
     this.size = options.size
     this.fds = Array(options.size)
     this.stdio = [options.in, options.out, options.err]
+    this.fs = options.fs
 
     this.insertStdio(options.in, 0, '<stdin>', new StandardInput())
     this.insertStdio(options.out, 1, '<stdout>', new StandardOutput(console.log))
@@ -205,8 +202,13 @@ export class FileDescriptorTable {
     return entry
   }
 
+  getFileTypeByFd (fd: number): WasiFileType {
+    const stat: any = this.fs!.fstatSync(fd)
+    return toFileType(stat)
+  }
+
   insertPreopen (fd: number, mappedPath: string, realPath: string): FileDescriptor {
-    const type = getFileTypeByFd(fd)
+    const type = this.getFileTypeByFd(fd)
     if (type !== WasiFileType.DIRECTORY) {
       throw new WasiError(`Preopen not dir: ["${mappedPath}", "${realPath}"]`, WasiErrno.ENOTDIR)
     }

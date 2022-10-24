@@ -1,3 +1,4 @@
+import type { IFs } from 'memfs-browser'
 import { WASI as _WASI } from './preview1'
 import type { Preopen } from './preview1'
 import type { exitcode } from './types'
@@ -50,6 +51,8 @@ export interface WASIOptions {
    * @defaultValue `2`
    */
   stderr?: number | undefined
+
+  filesystem?: false | { type: 'memfs'; fs: IFs }
 }
 
 /** @public */
@@ -94,7 +97,9 @@ export class WASI {
     validateInt32(stderr, 'options.stderr', 0)
     const stdio = [stdin, stdout, stderr] as const
 
-    const wrap = new _WASI(args, env, preopens, stdio)
+    const filesystem = options.filesystem ?? false
+
+    const wrap = new _WASI(args, env, preopens, stdio, filesystem)
 
     for (const prop in wrap) {
       (wrap as any)[prop] = (wrap as any)[prop].bind(wrap)
