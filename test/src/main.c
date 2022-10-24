@@ -39,19 +39,27 @@ int main(int argc, char** argv) {
   char cwd[256] = { 0 };
   getcwd(cwd, 256);
   printf("CWD: %s\n", cwd);
-  int r = chdir("/home/wasi");
-  printf("chdir: %d\n", errno);
-  getcwd(cwd, 256);
-  printf("CWD: %s\n", cwd);
+  mkdir("./node_modules", 0666);
+  int r = chdir("./node_modules");
+  if (r != 0) {
+    fprintf(stderr, "chdir: %d\n", errno);
+  } else {
+    getcwd(cwd, 256);
+    printf("CWD: %s\n", cwd);
+  }
 
   FILE* f = fopen("./.npmrc", "w");
-  fprintf(f, "file\n");
-  fclose(f);
-
-  f = fopen("./.npmrc", "r");
-  char content[256] = { 0 };
-  fread(content, 1, 256, f);
-  printf(".npmrc: %s\n", content);
+  if (f == NULL) {
+    fprintf(stderr, "fopen: %d\n", errno);
+  } else {
+    fprintf(f, "file\n");
+    fclose(f);
+    f = fopen("./.npmrc", "r");
+    char content[256] = { 0 };
+    fread(content, 1, 256, f);
+    printf(".npmrc: %s\n", content);
+    fclose(f);
+  }
 
   struct stat st;
   lstat(cwd, &st);

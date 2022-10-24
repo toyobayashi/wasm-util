@@ -420,6 +420,24 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
+  path_create_directory = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
+    debug('path_create_directory(%d, %d, %d)', fd, path, path_len)
+    path = Number(path)
+    path_len = Number(path_len)
+    if (path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_CREATE_DIRECTORY, BigInt(0))
+    let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+
+    pathString = resolve(fileDescriptor.realPath, pathString)
+    wasi.fs!.mkdirSync(pathString)
+    return WasiErrno.ESUCCESS
+  })
+
   path_filestat_get = syscallWrap(function (fd: Handle, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
     debug('path_filestat_get(%d, %d, %d, %d, %d)', fd, flags, path, path_len, filestat)
     path = Number(path)
