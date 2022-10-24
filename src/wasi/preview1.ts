@@ -5,12 +5,17 @@ import { resolve } from './path'
 import {
   WasiErrno,
   WasiRights,
-  WasiWhence
+  WasiWhence,
+  FileControlFlag,
+  WasiFileControlFlag,
+  WasiFdFlag,
+  WasiFileType
 } from './types'
 
 import type {
   Pointer,
   u8,
+  u16,
   size,
   filesize,
   Handle,
@@ -22,6 +27,7 @@ import { FileDescriptorTable, concatBuffer, toFileType } from './fd'
 import type { FileDescriptor } from './fd'
 import { WasiError } from './error'
 import { isPromiseLike } from './util'
+import { getRights } from './rights'
 
 function debug (...args: any[]): void {
   if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
@@ -85,12 +91,27 @@ function getMemory (wasi: WASI): MemoryTypedArrays {
   }
 }
 
-function handleError (err: any): WasiErrno {
+function handleError (err: Error & { code?: string }): WasiErrno {
   if (err instanceof WasiError) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(err)
     }
     return err.errno
+  }
+
+  switch (err.code) {
+    case 'ENOENT': return WasiErrno.ENOENT
+    case 'EBADF': return WasiErrno.EBADF
+    case 'EINVAL': return WasiErrno.EINVAL
+    case 'EPERM': return WasiErrno.EPERM
+    case 'EPROTO': return WasiErrno.EPROTO
+    case 'EEXIST': return WasiErrno.EEXIST
+    case 'ENOTDIR': return WasiErrno.ENOTDIR
+    case 'EMFILE': return WasiErrno.EMFILE
+    case 'EACCES': return WasiErrno.EACCES
+    case 'EISDIR': return WasiErrno.EISDIR
+    case 'ENOTEMPTY': return WasiErrno.ENOTEMPTY
+    case 'ENOSYS': return WasiErrno.ENOSYS
   }
 
   throw err
@@ -101,7 +122,7 @@ function syscallWrap<T extends (this: any, ...args: any[]) => WasiErrno | Promis
     let r: WasiErrno | PromiseLike<WasiErrno>
     try {
       r = f.apply(this, arguments as any)
-    } catch (err) {
+    } catch (err: any) {
       return handleError(err)
     }
 
@@ -218,6 +239,10 @@ export class WASI {
 
   fd_close = syscallWrap(function (fd: Handle): WasiErrno {
     debug('fd_close(%d)', fd)
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    wasi.fs!.closeSync(fileDescriptor.fd)
+    wasi.fds.remove(fd)
     return WasiErrno.ESUCCESS
   })
 
@@ -237,8 +262,17 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_seek = syscallWrap(function (fd: Handle, offset: filedelta, whence: WasiWhence, size: filesize): WasiErrno {
-    debug('fd_seek(%d, %d, %d, %d)', fd, offset, whence, size)
+  fd_seek = syscallWrap(function (fd: Handle, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
+    debug('fd_seek(%d, %d, %d, %d)', fd, offset, whence, newOffset)
+    newOffset = Number(newOffset)
+    if (newOffset === 0) {
+      return WasiErrno.EINVAL
+    }
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SEEK, BigInt(0))
+    const r = fileDescriptor.seek(offset, whence)
+    const { HEAPU64 } = getMemory(this)
+    HEAPU64[newOffset >> 2] = r
     return WasiErrno.ESUCCESS
   })
 
@@ -254,13 +288,26 @@ export class WASI {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ, BigInt(0))
 
-    const buffer = (fileDescriptor as any).stream?.read()
+    let totalSize = 0
     const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
       const buf = HEAP32[((iovs as number) + (i * 8)) >> 2]
       const bufLen = HEAPU32[(((iovs as number) + (i * 8)) >> 2) + 1]
+      totalSize += bufLen
       return HEAPU8.subarray(buf, buf + bufLen)
     })
-    const nread = buffer ? copyMemory(ioVecs, buffer) : 0
+
+    let buffer: Uint8Array
+    let nread: number = 0
+    if (fd === 0) {
+      buffer = (fileDescriptor as any).stream?.read()
+      nread = buffer ? copyMemory(ioVecs, buffer) : 0
+    } else {
+      buffer = new Uint8Array(totalSize)
+      ;(buffer as any)._isBuffer = true
+      const bytesRead = wasi.fs!.readSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
+      nread = buffer ? copyMemory(ioVecs, buffer.subarray(0, bytesRead)) : 0
+      fileDescriptor.pos += BigInt(nread)
+    }
 
     HEAPU32[size >> 2] = nread
     return WasiErrno.ESUCCESS
@@ -283,7 +330,13 @@ export class WASI {
       const bufLen = HEAPU32[(((iovs as number) + (i * 8)) >> 2) + 1]
       return HEAPU8.subarray(buf, buf + bufLen)
     }))
-    const nwritten = (fileDescriptor as any).stream?.write(buffer) ?? 0
+    let nwritten: number
+    if (fd === 1 || fd === 2) {
+      nwritten = (fileDescriptor as any).stream?.write(buffer) ?? 0
+    } else {
+      nwritten = wasi.fs!.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
+      fileDescriptor.pos += BigInt(nwritten)
+    }
 
     HEAPU32[size >> 2] = nwritten
     return WasiErrno.ESUCCESS
@@ -401,9 +454,110 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_fdstat_set_flags = function (): WasiErrno {
+  fd_fdstat_set_flags = function (fd: Handle, flags: number): WasiErrno {
+    debug('fd_fdstat_set_flags(%d, %d)', fd, flags)
     return WasiErrno.ENOSYS
   }
+
+  path_open = syscallWrap(function (
+    dirfd: Handle,
+    dirflags: number,
+    path: Pointer<u8>,
+    path_len: size,
+    o_flags: u16,
+    fs_rights_base: bigint,
+    fs_rights_inheriting: bigint,
+    fs_flags: u16,
+    fd: Pointer<Handle>
+  ): WasiErrno {
+    debug('path_open(%d, %d, %d, %d, %d, %d, %d, %d, %d)',
+      dirfd,
+      dirflags,
+      path,
+      path_len,
+      o_flags,
+      fs_rights_base,
+      fs_rights_inheriting,
+      fs_flags,
+      fd
+    )
+    path = Number(path)
+    fd = Number(fd)
+    if (path === 0 || fd === 0) {
+      return WasiErrno.EINVAL
+    }
+    path_len = Number(path_len)
+    fs_rights_base = BigInt(fs_rights_base)
+    fs_rights_base = BigInt(fs_rights_base)
+
+    const read = (fs_rights_base & (WasiRights.FD_READ |
+          WasiRights.FD_READDIR)) !== BigInt(0)
+    const write = (fs_rights_base & (WasiRights.FD_DATASYNC |
+          WasiRights.FD_WRITE |
+          WasiRights.FD_ALLOCATE |
+          WasiRights.FD_FILESTAT_SET_SIZE)) !== BigInt(0)
+    let flags = write ? read ? FileControlFlag.O_RDWR : FileControlFlag.O_WRONLY : FileControlFlag.O_RDONLY
+    let needed_base = WasiRights.PATH_OPEN
+    let needed_inheriting = fs_rights_base | fs_rights_inheriting
+
+    if ((o_flags & WasiFileControlFlag.O_CREAT) !== 0) {
+      flags |= FileControlFlag.O_CREAT
+      needed_base |= WasiRights.PATH_CREATE_FILE
+    }
+    if ((o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0) {
+      flags |= FileControlFlag.O_DIRECTORY
+    }
+    if ((o_flags & WasiFileControlFlag.O_EXCL) !== 0) {
+      flags |= FileControlFlag.O_EXCL
+    }
+    if ((o_flags & WasiFileControlFlag.O_TRUNC) !== 0) {
+      flags |= FileControlFlag.O_TRUNC
+      needed_base |= WasiRights.PATH_FILESTAT_SET_SIZE
+    }
+
+    if ((fs_flags & WasiFdFlag.APPEND) !== 0) {
+      flags |= FileControlFlag.O_APPEND
+    }
+    if ((fs_flags & WasiFdFlag.DSYNC) !== 0) {
+      // flags |= FileControlFlag.O_DSYNC;
+      needed_inheriting |= WasiRights.FD_DATASYNC
+    }
+    if ((fs_flags & WasiFdFlag.NONBLOCK) !== 0) { flags |= FileControlFlag.O_NONBLOCK }
+    if ((fs_flags & WasiFdFlag.RSYNC) !== 0) {
+      flags |= FileControlFlag.O_SYNC
+      needed_inheriting |= WasiRights.FD_SYNC
+    }
+    if ((fs_flags & WasiFdFlag.SYNC) !== 0) {
+      flags |= FileControlFlag.O_SYNC
+      needed_inheriting |= WasiRights.FD_SYNC
+    }
+    if (write && (flags & (FileControlFlag.O_APPEND | FileControlFlag.O_TRUNC)) === 0) {
+      needed_inheriting |= WasiRights.FD_SEEK
+    }
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(dirfd, needed_base, needed_inheriting)
+    const { HEAPU8, HEAP32 } = getMemory(this)
+    const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+    const resolved_path = resolve(fileDescriptor.realPath, pathString)
+    const r = wasi.fs!.openSync(resolved_path, flags, 0o666)
+    const filetype = wasi.fds.getFileTypeByFd(r)
+    if ((o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0 && filetype !== WasiFileType.DIRECTORY) {
+      return WasiErrno.ENOTDIR
+    }
+    const { base: max_base, inheriting: max_inheriting } = getRights(wasi.fds.stdio, r, flags, filetype)
+    const wrap = wasi.fds.insert(r, resolved_path, resolved_path, filetype, fs_rights_base & max_base, fs_rights_inheriting & max_inheriting, 0)
+    const stat = wasi.fs!.fstatSync(r, { bigint: true })
+    if (stat.isFile()) {
+      wrap.size = stat.size
+      if ((flags & FileControlFlag.O_APPEND) !== 0) {
+        wrap.pos = stat.size
+      }
+    }
+    HEAP32[fd >> 2] = wrap.id
+
+    return WasiErrno.ESUCCESS
+  })
 
   proc_exit = syscallWrap(function (rval: exitcode): WasiErrno {
     debug(`proc_exit(${rval})`)

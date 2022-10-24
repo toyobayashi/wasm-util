@@ -48,6 +48,11 @@ int main(int argc, char** argv) {
   fprintf(f, "file\n");
   fclose(f);
 
+  f = fopen("./.npmrc", "r");
+  char content[256] = { 0 };
+  fread(content, 1, 256, f);
+  printf(".npmrc: %s\n", content);
+
   struct stat st;
   lstat(cwd, &st);
 

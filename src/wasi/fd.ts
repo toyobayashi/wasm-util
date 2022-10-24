@@ -28,7 +28,9 @@ export function concatBuffer (buffers: Uint8Array[], size?: number): Uint8Array 
 }
 
 export class FileDescriptor {
-  public stream: Stream = undefined!
+  public stream: any = undefined
+  public pos = BigInt(0)
+  public size = BigInt(0)
 
   constructor (
     public id: number,
@@ -40,32 +42,22 @@ export class FileDescriptor {
     public rightsInheriting: bigint,
     public preopen: number
   ) {}
-}
 
-class Stream {
-  protected _pos: number
-  protected _size: number
-  constructor (size: number) {
-    this._pos = 0
-    this._size = size || 0
-  }
-
-  seek (offset: number, whence: WasiWhence): void {
+  seek (offset: bigint, whence: WasiWhence): bigint {
     if (whence === WasiWhence.SET) {
-      this._pos = offset
+      this.pos = BigInt(offset)
     } else if (whence === WasiWhence.CUR) {
-      this._pos += offset
+      this.pos += BigInt(offset)
     } else if (whence === WasiWhence.END) {
-      this._pos = this._size - offset
+      this.pos = BigInt(this.size) - BigInt(offset)
+    } else {
+      throw new WasiError('Unknown whence', WasiErrno.EIO)
     }
+    return this.pos
   }
 }
 
-class StandardInput extends Stream {
-  constructor () {
-    super(0)
-  }
-
+class StandardInput {
   seek (_offset: number, _whence: WasiWhence): void {}
 
   read (): Uint8Array {
@@ -76,11 +68,10 @@ class StandardInput extends Stream {
   }
 }
 
-class StandardOutput extends Stream {
+class StandardOutput {
   private readonly _print: (str: string) => void
   private _buf: Uint8Array | null
   constructor (print: (str: string) => void) {
-    super(0)
     this._print = print
     this._buf = null
   }
@@ -169,7 +160,7 @@ export class FileDescriptorTable {
     rightsBase: bigint,
     rightsInheriting: bigint,
     preopen: number,
-    stream?: Stream
+    stream?: any
   ): FileDescriptor {
     let index = -1
     if (this.used >= this.size) {
@@ -217,7 +208,7 @@ export class FileDescriptorTable {
   }
 
   get (id: number, base: bigint, inheriting: bigint): FileDescriptor {
-    if (id > this.size) {
+    if (id >= this.size) {
       throw new WasiError('Invalid fd', WasiErrno.EBADF)
     }
 
@@ -231,5 +222,19 @@ export class FileDescriptorTable {
       throw new WasiError('Capabilities insufficient', WasiErrno.ENOTCAPABLE)
     }
     return entry
+  }
+
+  remove (id: number): void {
+    if (id >= this.size) {
+      throw new WasiError('Invalid fd', WasiErrno.EBADF)
+    }
+
+    const entry = this.fds[id]
+    if (!entry || entry.id !== id) {
+      throw new WasiError('Bad file descriptor', WasiErrno.EBADF)
+    }
+
+    this.fds[id] = undefined!
+    this.used--
   }
 }

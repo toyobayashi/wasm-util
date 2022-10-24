@@ -91,6 +91,10 @@ const imports = {
   }
 }
 
+const vol = Volume.fromJSON({
+  '/home/wasi': null
+}, '/')
+
 const wasiOptions = {
   args: ['node', 'a.wasm'],
   env: {
@@ -102,9 +106,7 @@ const wasiOptions = {
   },
   filesystem: {
     type: 'memfs',
-    fs: createFsFromVolume(Volume.fromJSON({
-      '/home/wasi': null
-    }, '/'))
+    fs: createFsFromVolume(vol)
   }
 }
 
@@ -126,6 +128,8 @@ if (typeof __webpack_public_path__ !== 'undefined') {
   wasm = instance.exports
   await wasi.start(instance)
 }
+
+console.log(vol.toJSON())
 
 // async function main (wrappedExports) {
 //   const {

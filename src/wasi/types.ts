@@ -128,7 +128,40 @@ export const enum WasiWhence {
   END = 2
 }
 
+export const enum FileControlFlag {
+  O_RDONLY = 0,
+  O_WRONLY = 1,
+  O_RDWR = 2,
+  O_CREAT = 64,
+  O_EXCL = 128,
+  O_NOCTTY = 256,
+  O_TRUNC = 512,
+  O_APPEND = 1024,
+  O_DIRECTORY = 65536,
+  O_NOATIME = 262144,
+  O_NOFOLLOW = 131072,
+  O_SYNC = 1052672,
+  O_DIRECT = 16384,
+  O_NONBLOCK = 2048
+}
+
+export const enum WasiFileControlFlag {
+  O_CREAT = (1 << 0),
+  O_DIRECTORY = (1 << 1),
+  O_EXCL = (1 << 2),
+  O_TRUNC = (1 << 3)
+}
+
+export const enum WasiFdFlag {
+  APPEND = (1 << 0),
+  DSYNC = (1 << 1),
+  NONBLOCK = (1 << 2),
+  RSYNC = (1 << 3),
+  SYNC = (1 << 4)
+}
+
 export type u8 = number
+export type u16 = number
 export type u32 = number
 export type s64 = bigint
 export type u64 = bigint
