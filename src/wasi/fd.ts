@@ -7,7 +7,6 @@ import {
 } from './types'
 import { getRights } from './rights'
 import { WasiError } from './error'
-import type { Result } from './error'
 
 export function concatBuffer (buffers: Uint8Array[], size?: number): Uint8Array {
   let total = 0
@@ -212,26 +211,23 @@ export class FileDescriptorTable {
       throw new WasiError(`Preopen not dir: ["${mappedPath}", "${realPath}"]`, WasiErrno.ENOTDIR)
     }
     const result = getRights(this.stdio, fd, 0, type)
-    if (result.errno !== WasiErrno.ESUCCESS) {
-      throw new WasiError('Preopen get rights failed', result.errno)
-    }
     return this.insert(fd, mappedPath, realPath, type, result.base, result.inheriting, 1)
   }
 
-  get (id: number, base: bigint, inheriting: bigint): Result<FileDescriptor> {
+  get (id: number, base: bigint, inheriting: bigint): FileDescriptor {
     if (id > this.size) {
-      return { value: undefined, errno: WasiErrno.EBADF }
+      throw new WasiError('Invalid fd', WasiErrno.EBADF)
     }
 
     const entry = this.fds[id]
     if (!entry || entry.id !== id) {
-      return { value: undefined, errno: WasiErrno.EBADF }
+      throw new WasiError('Bad file descriptor', WasiErrno.EBADF)
     }
 
     /* Validate that the fd has the necessary rights. */
     if ((~entry.rightsBase & base) !== BigInt(0) || (~entry.rightsInheriting & inheriting) !== BigInt(0)) {
-      return { value: undefined, errno: WasiErrno.ENOTCAPABLE }
+      throw new WasiError('Capabilities insufficient', WasiErrno.ENOTCAPABLE)
     }
-    return { value: entry, errno: WasiErrno.ESUCCESS }
+    return entry
   }
 }

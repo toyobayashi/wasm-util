@@ -1,3 +1,4 @@
+import { WasiError } from './error'
 import { WasiErrno, WasiRights, WasiFileType } from './types'
 
 export const RIGHTS_ALL = WasiRights.FD_DATASYNC |
@@ -92,19 +93,16 @@ export const TTY_INHERITING = BigInt(0) as 0n
 export interface GetRightsResult {
   base: bigint
   inheriting: bigint
-  errno: WasiErrno
 }
 
 export function getRights (stdio: number[], fd: number, flags: number, type: WasiFileType): GetRightsResult {
   const ret: GetRightsResult = {
     base: BigInt(0),
-    inheriting: BigInt(0),
-    errno: WasiErrno.ESUCCESS
+    inheriting: BigInt(0)
   }
 
   if (type === WasiFileType.UNKNOWN) {
-    ret.errno = WasiErrno.EINVAL
-    return ret
+    throw new WasiError('Unknown file type', WasiErrno.EINVAL)
   }
 
   switch (type) {
