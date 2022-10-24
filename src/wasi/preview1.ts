@@ -19,6 +19,7 @@ import type {
 import { FileDescriptorTable, concatBuffer, toFileType } from './fd'
 import type { FileDescriptor } from './fd'
 import { WasiError } from './error'
+import { isPromiseLike } from './util'
 
 function debug (...args: any[]): void {
   if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
@@ -86,20 +87,30 @@ function getMemory (wasi: WASI): MemoryTypedArrays {
   }
 }
 
-function syscallWrap<T extends (this: any, ...args: any[]) => any> (f: T): T {
-  return function (this: any): WasiErrno {
-    try {
-      return f.apply(this, arguments as any)
-    } catch (err) {
-      if (err instanceof WasiError) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn(err)
-        }
-        return err.errno
-      }
-
-      throw err
+function handleError (err: any): WasiErrno {
+  if (err instanceof WasiError) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(err)
     }
+    return err.errno
+  }
+
+  throw err
+}
+
+function syscallWrap<T extends (this: any, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (f: T): T {
+  return function (this: any) {
+    let r: WasiErrno | PromiseLike<WasiErrno>
+    try {
+      r = f.apply(this, arguments as any)
+    } catch (err) {
+      return handleError(err)
+    }
+
+    if (isPromiseLike(r)) {
+      return r.then(_ => _, handleError)
+    }
+    return r
   } as unknown as T
 }
 

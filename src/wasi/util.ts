@@ -39,3 +39,7 @@ export function validateInt32 (value: unknown, name: string, min = -2147483648, 
     throw new RangeError(`${name} must be >= ${min} && <= ${max}. Received ${value}`)
   }
 }
+
+export function isPromiseLike (obj: any): obj is PromiseLike<any> {
+  return !!(obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function')
+}

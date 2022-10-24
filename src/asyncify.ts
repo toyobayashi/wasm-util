@@ -1,6 +1,4 @@
-function isPromise (obj: any): obj is PromiseLike<any> {
-  return !!(obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function')
-}
+import { isPromiseLike } from './wasi/util'
 
 const ignoreNames = [
   'asyncify_get_state',
@@ -135,7 +133,7 @@ export class Asyncify {
       }
       this.assertState()
       const v = f(...args)
-      if (!isPromise(v)) return v
+      if (!isPromiseLike(v)) return v
       this.exports!.asyncify_start_unwind(this.dataPtr)
       this.value = v
     }) as any
