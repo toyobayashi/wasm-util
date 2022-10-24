@@ -93,7 +93,7 @@ function syscallWrap<T extends (this: any, ...args: any[]) => any> (f: T): T {
     } catch (err) {
       if (err instanceof WasiError) {
         if (process.env.NODE_ENV !== 'production') {
-          console.error(err)
+          console.warn(err)
         }
         return err.errno
       }
