@@ -17,6 +17,7 @@ import type {
 } from './types'
 
 import { FileDescriptorTable, concatBuffer, toFileType } from './fd'
+import type { FileDescriptor } from './fd'
 import { WasiError } from './error'
 
 function debug (...args: any[]): void {
@@ -309,7 +310,7 @@ export class WASI {
       return WasiErrno.ESUCCESS
     })
 
-  fd_prestat_get = syscallWrap(function (fd: Handle, prestat: Pointer): WasiErrno {
+  fd_prestat_get = function (this: WASI, fd: Handle, prestat: Pointer): WasiErrno {
     debug('fd_prestat_get(%d, %d)', fd, prestat)
     prestat = Number(prestat)
     if (prestat === 0) {
@@ -318,13 +319,19 @@ export class WASI {
     const { HEAPU32 } = getMemory(this)
 
     const wasi = _wasi.get(this)!
-    const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    let fileDescriptor: FileDescriptor
+    try {
+      fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    } catch (err) {
+      if (err instanceof WasiError) return err.errno
+      throw err
+    }
     if (fileDescriptor.preopen !== 1) return WasiErrno.EINVAL
     // preopen type is dir(0)
     HEAPU32[prestat >> 2] = 0
     HEAPU32[(prestat + 4) >> 2] = encoder.encode(fileDescriptor.path).length + 1
     return WasiErrno.ESUCCESS
-  })
+  }
 
   fd_prestat_dir_name = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
     debug('fd_prestat_dir_name(%d, %d, %d)', fd, path, path_len)

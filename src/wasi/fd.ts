@@ -28,7 +28,7 @@ export function concatBuffer (buffers: Uint8Array[], size?: number): Uint8Array 
   return ret
 }
 
-class FileDescriptor {
+export class FileDescriptor {
   public stream: Stream = undefined!
 
   constructor (
