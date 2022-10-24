@@ -92,5 +92,10 @@ export class WasiError extends Error {
     return strerror(this.errno)
   }
 }
+Object.defineProperty(WasiError.prototype, 'name', {
+  configurable: true,
+  writable: true,
+  value: 'WasiError'
+})
 
 export type Result<T> = { value: T; errno: WasiErrno.ESUCCESS } | { value: undefined; errno: Exclude<WasiErrno, WasiErrno.ESUCCESS> }

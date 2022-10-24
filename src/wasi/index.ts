@@ -97,7 +97,7 @@ export class WASI {
     const wrap = new _WASI(args, env, preopens, stdio)
 
     for (const prop in wrap) {
-      wrap[prop] = wrap[prop].bind(wrap)
+      (wrap as any)[prop] = (wrap as any)[prop].bind(wrap)
     }
 
     if (options.returnOnExit !== undefined) {
@@ -105,7 +105,7 @@ export class WASI {
       if (options.returnOnExit) { wrap.proc_exit = wasiReturnOnProcExit.bind(this) }
     }
 
-    this[kSetMemory] = wrap._setMemory
+    this[kSetMemory] = wrap._setMemory!
     delete wrap._setMemory
     this.wasiImport = wrap
     this[kStarted] = false

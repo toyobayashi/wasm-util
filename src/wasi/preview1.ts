@@ -66,78 +66,76 @@ export interface Preopen {
   realPath: string
 }
 
-/** @class */
-// eslint-disable-next-line spaced-comment, @typescript-eslint/no-redeclare
-const WASI = /*#__PURE__*/ (function () {
-  const _memory = new WeakMap<any, WebAssembly.Memory>()
-  const _wasi = new WeakMap<any, WrappedData>()
+const _memory = new WeakMap<WASI, WebAssembly.Memory>()
+const _wasi = new WeakMap<WASI, WrappedData>()
 
-  vol.fromJSON({
-    '/': null,
-    '/home/wasi': null
-  }, '/')
+vol.fromJSON({
+  '/': null,
+  '/home/wasi': null
+}, '/')
 
-  function getMemory (wasi: any): MemoryTypedArrays {
-    const memory = _memory.get(wasi)!
-    return {
-      HEAPU8: new Uint8Array(memory.buffer),
-      HEAPU16: new Uint16Array(memory.buffer),
-      HEAP32: new Int32Array(memory.buffer),
-      HEAPU32: new Uint32Array(memory.buffer),
-      HEAPU64: new BigUint64Array(memory.buffer)
+function getMemory (wasi: WASI): MemoryTypedArrays {
+  const memory = _memory.get(wasi)!
+  return {
+    HEAPU8: new Uint8Array(memory.buffer),
+    HEAPU16: new Uint16Array(memory.buffer),
+    HEAP32: new Int32Array(memory.buffer),
+    HEAPU32: new Uint32Array(memory.buffer),
+    HEAPU64: new BigUint64Array(memory.buffer)
+  }
+}
+
+function syscallWrap<T extends (this: any, ...args: any[]) => any> (f: T): T {
+  return function (this: any): WasiErrno {
+    try {
+      return f.apply(this, arguments as any)
+    } catch (err) {
+      if (err instanceof WasiError) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.error(err)
+        }
+        return err.errno
+      }
+
+      throw err
+    }
+  } as unknown as T
+}
+
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
+
+export class WASI {
+  constructor (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number]) {
+    const fds = new FileDescriptorTable({
+      size: 3,
+      in: stdio[0],
+      out: stdio[1],
+      err: stdio[2]
+    })
+    _wasi.set(this, {
+      fds,
+      args,
+      argvBuf: encoder.encode(args.join('\0') + '\0'),
+      env,
+      envBuf: encoder.encode(env.join('\0') + '\0')
+    })
+
+    for (let i = 0; i < preopens.length; ++i) {
+      const realPath = vol.realpathSync(preopens[i].realPath, 'utf8') as string
+      const fd = vol.openSync(realPath, 'r', 0o666)
+      fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
     }
   }
 
-  function syscallWrap<T extends Function> (f: T): T {
-    return function (this: any): WasiErrno {
-      try {
-        return f.apply(this, arguments)
-      } catch (err) {
-        if (err instanceof WasiError) {
-          return err.errno
-        }
-
-        throw err
-      }
-    } as unknown as T
+  _setMemory?: (m: WebAssembly.Memory) => void = function _setMemory (this: WASI, m: WebAssembly.Memory) {
+    if (!(m instanceof WebAssembly.Memory)) {
+      throw new TypeError('"instance.exports.memory" property must be a WebAssembly.Memory')
+    }
+    _memory.set(this, m)
   }
 
-  const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-
-  const WASI: new (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number]) => any =
-    function WASI (this: any, args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number]): void {
-      const fds = new FileDescriptorTable({
-        size: 3,
-        in: stdio[0],
-        out: stdio[1],
-        err: stdio[2]
-      })
-      _wasi.set(this, {
-        fds,
-        args,
-        argvBuf: encoder.encode(args.join('\0') + '\0'),
-        env,
-        envBuf: encoder.encode(env.join('\0') + '\0')
-      })
-
-      for (let i = 0; i < preopens.length; ++i) {
-        const realPath = vol.realpathSync(preopens[i].realPath, 'utf8') as string
-        const fd = vol.openSync(realPath, 'r', 0o666)
-        fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-this-alias
-      const _this = this
-      this._setMemory = function _setMemory (m: WebAssembly.Memory) {
-        if (!(m instanceof WebAssembly.Memory)) {
-          throw new TypeError('"instance.exports.memory" property must be a WebAssembly.Memory')
-        }
-        _memory.set(_this, m)
-      }
-    } as any
-
-  WASI.prototype.args_get = syscallWrap(function args_get (this: any, argv: Pointer<Pointer<u8>>, argv_buf: Pointer<u8>): WasiErrno {
+  args_get = syscallWrap(function (argv: Pointer<Pointer<u8>>, argv_buf: Pointer<u8>): WasiErrno {
     debug('args_get(%d, %d)', argv, argv_buf)
     argv = Number(argv)
     argv_buf = Number(argv_buf)
@@ -155,7 +153,7 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.args_sizes_get = syscallWrap(function args_sizes_get (this: any, argc: Pointer<size>, argv_buf_size: Pointer<size>): WasiErrno {
+  args_sizes_get = syscallWrap(function (argc: Pointer<size>, argv_buf_size: Pointer<size>): WasiErrno {
     debug('args_sizes_get(%d, %d)', argc, argv_buf_size)
     argc = Number(argc)
     argv_buf_size = Number(argv_buf_size)
@@ -170,7 +168,7 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.environ_get = syscallWrap(function environ_get (this: any, environ: Pointer<Pointer<u8>>, environ_buf: Pointer<u8>): WasiErrno {
+  environ_get = syscallWrap(function (environ: Pointer<Pointer<u8>>, environ_buf: Pointer<u8>): WasiErrno {
     debug('environ_get(%d, %d)', environ, environ_buf)
     environ = Number(environ)
     environ_buf = Number(environ_buf)
@@ -188,7 +186,7 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.environ_sizes_get = syscallWrap(function environ_sizes_get (this: any, len: Pointer<size>, buflen: Pointer<size>): WasiErrno {
+  environ_sizes_get = syscallWrap(function (len: Pointer<size>, buflen: Pointer<size>): WasiErrno {
     debug('environ_sizes_get(%d, %d)', len, buflen)
     len = Number(len)
     buflen = Number(buflen)
@@ -202,12 +200,12 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.fd_close = syscallWrap(function fd_close (this: any, fd: Handle): WasiErrno {
+  fd_close = syscallWrap(function (fd: Handle): WasiErrno {
     debug('fd_close(%d)', fd)
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.fd_fdstat_get = syscallWrap(function fd_fdstat_get (this: any, fd: Handle, fdstat: Pointer): WasiErrno {
+  fd_fdstat_get = syscallWrap(function (fd: Handle, fdstat: Pointer): WasiErrno {
     debug('fd_fdstat_get(%d, %d)', fd, fdstat)
     fdstat = Number(fdstat)
     if (fdstat === 0) {
@@ -223,12 +221,12 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.fd_seek = syscallWrap(function fd_seek (this: any, fd: Handle, offset: filedelta, whence: WasiWhence, size: filesize): WasiErrno {
+  fd_seek = syscallWrap(function (fd: Handle, offset: filedelta, whence: WasiWhence, size: filesize): WasiErrno {
     debug('fd_seek(%d, %d, %d, %d)', fd, offset, whence, size)
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.fd_read = syscallWrap(function fd_read (this: any, fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
+  fd_read = syscallWrap(function (fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
     debug('fd_read(%d, %d, %d, %d)', fd, iovs, iovslen, size)
     iovs = Number(iovs)
     size = Number(size)
@@ -252,7 +250,7 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.fd_write = syscallWrap(function fd_write (this: any, fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
+  fd_write = syscallWrap(function (fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
     debug('fd_write(%d, %d, %d, %d)', fd, iovs, iovslen, size)
     iovs = Number(iovs)
     size = Number(size)
@@ -275,8 +273,8 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
-    ? syscallWrap(function random_get (this: any, buf: Pointer<u8>, buf_len: size): WasiErrno {
+  random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
+    ? syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
       debug('random_get(%d, %d)', buf, buf_len)
       buf = Number(buf)
       if (buf === 0) {
@@ -295,7 +293,7 @@ const WASI = /*#__PURE__*/ (function () {
 
       return WasiErrno.ESUCCESS
     })
-    : syscallWrap(function random_get (this: any, buf: Pointer<u8>, buf_len: size): WasiErrno {
+    : syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
       debug('random_get(%d, %d)', buf, buf_len)
       buf = Number(buf)
       if (buf === 0) {
@@ -311,7 +309,7 @@ const WASI = /*#__PURE__*/ (function () {
       return WasiErrno.ESUCCESS
     })
 
-  WASI.prototype.fd_prestat_get = syscallWrap(function fd_prestat_get (this: any, fd: Handle, prestat: Pointer): WasiErrno {
+  fd_prestat_get = syscallWrap(function (fd: Handle, prestat: Pointer): WasiErrno {
     debug('fd_prestat_get(%d, %d)', fd, prestat)
     prestat = Number(prestat)
     if (prestat === 0) {
@@ -328,7 +326,7 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.fd_prestat_dir_name = syscallWrap(function fd_prestat_dir_name (this: any, fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
+  fd_prestat_dir_name = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
     debug('fd_prestat_dir_name(%d, %d, %d)', fd, path, path_len)
     path = Number(path)
     path_len = Number(path_len)
@@ -347,7 +345,7 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.path_filestat_get = syscallWrap(function path_filestat_get (this: any, fd: Handle, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
+  path_filestat_get = syscallWrap(function (fd: Handle, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
     debug('path_filestat_get(%d, %d, %d, %d, %d)', fd, flags, path, path_len, filestat)
     path = Number(path)
     path_len = Number(path_len)
@@ -381,12 +379,8 @@ const WASI = /*#__PURE__*/ (function () {
     return WasiErrno.ESUCCESS
   })
 
-  WASI.prototype.proc_exit = syscallWrap(function proc_exit (this: any, rval: exitcode): WasiErrno {
+  proc_exit = syscallWrap(function (rval: exitcode): WasiErrno {
     debug(`proc_exit(${rval})`)
     return WasiErrno.ESUCCESS
   })
-
-  return WASI
-})()
-
-export { WASI }
+}
