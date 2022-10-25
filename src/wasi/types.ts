@@ -160,6 +160,20 @@ export const enum WasiFdFlag {
   SYNC = (1 << 4)
 }
 
+export const enum WasiClockid {
+  REALTIME = 0,
+  MONOTONIC = 1,
+  PROCESS_CPUTIME_ID = 2,
+  THREAD_CPUTIME_ID = 3
+}
+
+export const enum WasiFstFlag {
+  SET_ATIM = (1 << 0),
+  SET_ATIM_NOW = (1 << 1),
+  SET_MTIM = (1 << 2),
+  SET_MTIM_NOW = (1 << 3)
+}
+
 export type u8 = number
 export type u16 = number
 export type u32 = number

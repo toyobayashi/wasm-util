@@ -111,6 +111,17 @@ export function toFileType (stat: ReturnType<InstanceType<typeof Volume>['statSy
   return WasiFileType.UNKNOWN
 }
 
+export function toFileStat (view: DataView, buf: number, stat: ReturnType<InstanceType<typeof Volume>['statSync']>): void {
+  view.setBigUint64(buf, stat!.dev, true)
+  view.setBigUint64(buf + 8, stat!.ino, true)
+  view.setBigUint64(buf + 16, BigInt(toFileType(stat)), true)
+  view.setBigUint64(buf + 24, stat!.nlink, true)
+  view.setBigUint64(buf + 32, stat!.size, true)
+  view.setBigUint64(buf + 40, stat!.atimeMs * BigInt(1000000), true)
+  view.setBigUint64(buf + 48, stat!.mtimeMs * BigInt(1000000), true)
+  view.setBigUint64(buf + 56, stat!.ctimeMs * BigInt(1000000), true)
+}
+
 export interface FileDescriptorTableOptions {
   size: number
   in: number

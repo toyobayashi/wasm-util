@@ -9,13 +9,16 @@ import {
   FileControlFlag,
   WasiFileControlFlag,
   WasiFdFlag,
-  WasiFileType
+  WasiFileType,
+  WasiClockid,
+  WasiFstFlag
 } from './types'
 
 import type {
   Pointer,
   u8,
   u16,
+  u64,
   size,
   filesize,
   Handle,
@@ -23,7 +26,7 @@ import type {
   exitcode
 } from './types'
 
-import { FileDescriptorTable, concatBuffer, toFileType } from './fd'
+import { FileDescriptorTable, concatBuffer, toFileStat } from './fd'
 import type { FileDescriptor } from './fd'
 import { WasiError } from './error'
 import { isPromiseLike } from './util'
@@ -231,12 +234,85 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
+  clock_res_get = syscallWrap(function (id: WasiClockid, resolution: Pointer<u64>): WasiErrno {
+    debug('clock_res_get(%d, %d)', id, resolution)
+    resolution = Number(resolution)
+    if (resolution === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { view } = getMemory(this)
+
+    switch (id) {
+      case WasiClockid.REALTIME:
+        view.setBigUint64(resolution, BigInt(1000000), true)
+        return WasiErrno.ESUCCESS
+      case WasiClockid.MONOTONIC:
+      case WasiClockid.PROCESS_CPUTIME_ID:
+      case WasiClockid.THREAD_CPUTIME_ID:
+        view.setBigUint64(resolution, BigInt(1000), true)
+        return WasiErrno.ESUCCESS
+      default: return WasiErrno.EINVAL
+    }
+  })
+
+  clock_time_get = syscallWrap(function (id: WasiClockid, percision: u64, time: Pointer<u64>): WasiErrno {
+    debug('clock_time_get(%d, %d, %d)', id, percision, time)
+    time = Number(time)
+    if (time === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { view } = getMemory(this)
+
+    switch (id) {
+      case WasiClockid.REALTIME:
+        view.setBigUint64(time, BigInt(Date.now()) * BigInt(1000000), true)
+        return WasiErrno.ESUCCESS
+      case WasiClockid.MONOTONIC:
+      case WasiClockid.PROCESS_CPUTIME_ID:
+      case WasiClockid.THREAD_CPUTIME_ID: {
+        const t = performance.now()
+        const s = Math.trunc(t)
+        const ms = Math.floor((t - s) * 1000)
+
+        const result = BigInt(s) * BigInt(1000000000) + BigInt(ms) * BigInt(1000000)
+
+        view.setBigUint64(time, result, true)
+        return WasiErrno.ESUCCESS
+      }
+      default: return WasiErrno.EINVAL
+    }
+  })
+
+  fd_advise = function (fd: Handle, offset: filesize, len: filesize, advice: u8): WasiErrno {
+    debug('fd_advise(%d, %d, %d, %d)', fd, offset, len, advice)
+    return WasiErrno.ENOSYS
+  }
+
+  fd_allocate = syscallWrap(function (fd: Handle, offset: filesize, len: filesize): WasiErrno {
+    debug('fd_allocate(%d, %d, %d)', fd, offset, len)
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_ALLOCATE, BigInt(0))
+    const stat = wasi.fs!.fstatSync(fileDescriptor.fd, { bigint: true })
+    if (stat.size < offset + len) {
+      wasi.fs!.truncateSync(fileDescriptor.fd, Number(offset + len))
+    }
+    return WasiErrno.ESUCCESS
+  })
+
   fd_close = syscallWrap(function (fd: Handle): WasiErrno {
     debug('fd_close(%d)', fd)
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
     wasi.fs!.closeSync(fileDescriptor.fd)
     wasi.fds.remove(fd)
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_datasync = syscallWrap(function (fd: Handle): WasiErrno {
+    debug('fd_datasync(%d)', fd)
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_DATASYNC, BigInt(0))
+    wasi.fs!.fdatasyncSync(fileDescriptor.fd)
     return WasiErrno.ESUCCESS
   })
 
@@ -256,17 +332,105 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_seek = syscallWrap(function (fd: Handle, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
-    debug('fd_seek(%d, %d, %d, %d)', fd, offset, whence, newOffset)
-    newOffset = Number(newOffset)
-    if (newOffset === 0) {
+  fd_fdstat_set_flags = function (fd: Handle, flags: number): WasiErrno {
+    debug('fd_fdstat_set_flags(%d, %d)', fd, flags)
+    return WasiErrno.ENOSYS
+  }
+
+  fd_fdstat_set_rights = syscallWrap(function (fd: Handle, rightsBase: bigint, rightsInheriting: bigint): WasiErrno {
+    debug('fd_fdstat_set_rights(%d, %d, %d)', fd, rightsBase, rightsInheriting)
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    if ((rightsBase | fileDescriptor.rightsBase) > fileDescriptor.rightsBase) {
+      return WasiErrno.ENOTCAPABLE
+    }
+
+    if ((rightsInheriting | fileDescriptor.rightsInheriting) >
+        fileDescriptor.rightsInheriting) {
+      return WasiErrno.ENOTCAPABLE
+    }
+
+    fileDescriptor.rightsBase = rightsBase
+    fileDescriptor.rightsInheriting = rightsInheriting
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_filestat_get = syscallWrap(function (fd: Handle, buf: Pointer): WasiErrno {
+    debug('fd_filestat_get(%d, %d)', fd, buf)
+    buf = Number(buf)
+    if (buf === 0) return WasiErrno.EINVAL
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_GET, BigInt(0))
+    const stat = wasi.fs!.fstatSync(fileDescriptor.fd, { bigint: true })
+    const { view } = getMemory(this)
+    toFileStat(view, buf, stat)
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_filestat_set_size = syscallWrap(function (fd: Handle, size: filesize): WasiErrno {
+    debug('fd_filestat_set_size(%d, %d)', fd, size)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_SET_SIZE, BigInt(0))
+    wasi.fs!.ftruncateSync(fileDescriptor.fd, Number(size))
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_filestat_set_times = syscallWrap(function (fd: Handle, atim: bigint, mtim: bigint, flags: WasiFstFlag): WasiErrno {
+    debug('fd_filestat_set_times(%d, %d, %d, %d)', fd, atim, mtim, flags)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_SET_TIMES, BigInt(0))
+    if ((flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
+      atim = BigInt(Date.now() * 1000000)
+    }
+
+    if ((flags & WasiFstFlag.SET_MTIM_NOW) === WasiFstFlag.SET_MTIM_NOW) {
+      mtim = BigInt(Date.now() * 1000000)
+    }
+    wasi.fs!.futimesSync(fileDescriptor.fd, Number(atim), Number(mtim))
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_prestat_get = function (this: WASI, fd: Handle, prestat: Pointer): WasiErrno {
+    debug('fd_prestat_get(%d, %d)', fd, prestat)
+    prestat = Number(prestat)
+    if (prestat === 0) {
       return WasiErrno.EINVAL
     }
+
     const wasi = _wasi.get(this)!
-    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SEEK, BigInt(0))
-    const r = fileDescriptor.seek(offset, whence)
+    let fileDescriptor: FileDescriptor
+    try {
+      fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    } catch (err) {
+      if (err instanceof WasiError) return err.errno
+      throw err
+    }
+    if (fileDescriptor.preopen !== 1) return WasiErrno.EINVAL
     const { view } = getMemory(this)
-    view.setBigUint64(newOffset, r, true)
+    // preopen type is dir(0)
+    view.setUint32(prestat, 0, true)
+    view.setUint32(prestat + 4, encoder.encode(fileDescriptor.path).length + 1, true)
+    return WasiErrno.ESUCCESS
+  }
+
+  fd_prestat_dir_name = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
+    debug('fd_prestat_dir_name(%d, %d, %d)', fd, path, path_len)
+    path = Number(path)
+    path_len = Number(path_len)
+    if (path === 0) {
+      return WasiErrno.EINVAL
+    }
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
+    if (fileDescriptor.preopen !== 1) return WasiErrno.EBADF
+    const buffer = encoder.encode(fileDescriptor.path + '\0')
+    const size = buffer.length
+    if (size > path_len) return WasiErrno.ENOBUFS
+    const { HEAPU8 } = getMemory(this)
+    HEAPU8.set(buffer, path)
     return WasiErrno.ESUCCESS
   })
 
@@ -308,6 +472,20 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
+  fd_seek = syscallWrap(function (fd: Handle, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
+    debug('fd_seek(%d, %d, %d, %d)', fd, offset, whence, newOffset)
+    newOffset = Number(newOffset)
+    if (newOffset === 0) {
+      return WasiErrno.EINVAL
+    }
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SEEK, BigInt(0))
+    const r = fileDescriptor.seek(offset, whence)
+    const { view } = getMemory(this)
+    view.setBigUint64(newOffset, r, true)
+    return WasiErrno.ESUCCESS
+  })
+
   fd_write = syscallWrap(function (fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
     debug('fd_write(%d, %d, %d, %d)', fd, iovs, iovslen, size)
     iovs = Number(iovs)
@@ -335,84 +513,6 @@ export class WASI {
     }
 
     view.setUint32(size, nwritten, true)
-    return WasiErrno.ESUCCESS
-  })
-
-  random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
-    ? syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
-      debug('random_get(%d, %d)', buf, buf_len)
-      buf = Number(buf)
-      if (buf === 0) {
-        return WasiErrno.EINVAL
-      }
-      buf_len = Number(buf_len)
-
-      const { HEAPU8 } = getMemory(this)
-      let pos: number
-      const stride = 65536
-
-      for (pos = 0; pos + stride < buf_len; pos += stride) {
-        crypto.getRandomValues(HEAPU8.subarray(buf + pos, buf + pos + stride))
-      }
-      crypto.getRandomValues(HEAPU8.subarray(buf + pos, buf + buf_len))
-
-      return WasiErrno.ESUCCESS
-    })
-    : syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
-      debug('random_get(%d, %d)', buf, buf_len)
-      buf = Number(buf)
-      if (buf === 0) {
-        return WasiErrno.EINVAL
-      }
-      buf_len = Number(buf_len)
-
-      const { view } = getMemory(this)
-      for (let i = buf; i < buf + buf_len; ++i) {
-        view.setUint8(i, Math.floor(Math.random() * 256))
-      }
-
-      return WasiErrno.ESUCCESS
-    })
-
-  fd_prestat_get = function (this: WASI, fd: Handle, prestat: Pointer): WasiErrno {
-    debug('fd_prestat_get(%d, %d)', fd, prestat)
-    prestat = Number(prestat)
-    if (prestat === 0) {
-      return WasiErrno.EINVAL
-    }
-
-    const wasi = _wasi.get(this)!
-    let fileDescriptor: FileDescriptor
-    try {
-      fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
-    } catch (err) {
-      if (err instanceof WasiError) return err.errno
-      throw err
-    }
-    if (fileDescriptor.preopen !== 1) return WasiErrno.EINVAL
-    const { view } = getMemory(this)
-    // preopen type is dir(0)
-    view.setUint32(prestat, 0, true)
-    view.setUint32(prestat + 4, encoder.encode(fileDescriptor.path).length + 1, true)
-    return WasiErrno.ESUCCESS
-  }
-
-  fd_prestat_dir_name = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
-    debug('fd_prestat_dir_name(%d, %d, %d)', fd, path, path_len)
-    path = Number(path)
-    path_len = Number(path_len)
-    if (path === 0) {
-      return WasiErrno.EINVAL
-    }
-
-    const wasi = _wasi.get(this)!
-    const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
-    if (fileDescriptor.preopen !== 1) return WasiErrno.EBADF
-    const buffer = encoder.encode(fileDescriptor.path + '\0')
-    const size = buffer.length
-    if (size > path_len) return WasiErrno.ENOBUFS
-    const { HEAPU8 } = getMemory(this)
-    HEAPU8.set(buffer, path)
     return WasiErrno.ESUCCESS
   })
 
@@ -457,21 +557,9 @@ export class WASI {
       stat = wasi.fs!.lstatSync(pathString, { bigint: true })
     }
 
-    view.setBigUint64(filestat, stat.dev, true)
-    view.setBigUint64(filestat + 8, stat.ino, true)
-    view.setBigUint64(filestat + 16, BigInt(toFileType(stat)), true)
-    view.setBigUint64(filestat + 24, stat.nlink, true)
-    view.setBigUint64(filestat + 32, stat.size, true)
-    view.setBigUint64(filestat + 40, stat.atimeMs * BigInt(1000000), true)
-    view.setBigUint64(filestat + 48, stat.mtimeMs * BigInt(1000000), true)
-    view.setBigUint64(filestat + 56, stat.ctimeMs * BigInt(1000000), true)
+    toFileStat(view, filestat, stat)
     return WasiErrno.ESUCCESS
   })
-
-  fd_fdstat_set_flags = function (fd: Handle, flags: number): WasiErrno {
-    debug('fd_fdstat_set_flags(%d, %d)', fd, flags)
-    return WasiErrno.ENOSYS
-  }
 
   path_open = syscallWrap(function (
     dirfd: Handle,
@@ -578,5 +666,66 @@ export class WASI {
   proc_exit = syscallWrap(function (rval: exitcode): WasiErrno {
     debug(`proc_exit(${rval})`)
     return WasiErrno.ESUCCESS
+  })
+
+  proc_raise = syscallWrap(function (sig: number): WasiErrno {
+    debug(`proc_raise(${sig})`)
+    return WasiErrno.ENOSYS
+  })
+
+  sched_yield = syscallWrap(function (): WasiErrno {
+    debug('sched_yield()')
+    return WasiErrno.ESUCCESS
+  })
+
+  random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
+    ? syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
+      debug('random_get(%d, %d)', buf, buf_len)
+      buf = Number(buf)
+      if (buf === 0) {
+        return WasiErrno.EINVAL
+      }
+      buf_len = Number(buf_len)
+
+      const { HEAPU8 } = getMemory(this)
+      let pos: number
+      const stride = 65536
+
+      for (pos = 0; pos + stride < buf_len; pos += stride) {
+        crypto.getRandomValues(HEAPU8.subarray(buf + pos, buf + pos + stride))
+      }
+      crypto.getRandomValues(HEAPU8.subarray(buf + pos, buf + buf_len))
+
+      return WasiErrno.ESUCCESS
+    })
+    : syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
+      debug('random_get(%d, %d)', buf, buf_len)
+      buf = Number(buf)
+      if (buf === 0) {
+        return WasiErrno.EINVAL
+      }
+      buf_len = Number(buf_len)
+
+      const { view } = getMemory(this)
+      for (let i = buf; i < buf + buf_len; ++i) {
+        view.setUint8(i, Math.floor(Math.random() * 256))
+      }
+
+      return WasiErrno.ESUCCESS
+    })
+
+  sock_recv = syscallWrap(function (): WasiErrno {
+    debug('sock_recv(unimplemented)')
+    return WasiErrno.ENOTSUP
+  })
+
+  sock_send = syscallWrap(function (): WasiErrno {
+    debug('sock_send(unimplemented)')
+    return WasiErrno.ENOTSUP
+  })
+
+  sock_shutdown = syscallWrap(function (): WasiErrno {
+    debug('sock_shutdown(unimplemented)')
+    return WasiErrno.ENOTSUP
   })
 }
