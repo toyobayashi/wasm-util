@@ -21,7 +21,7 @@ import type {
   u64,
   size,
   filesize,
-  Handle,
+  fd,
   filedelta,
   exitcode
 } from './types'
@@ -33,12 +33,6 @@ import { isPromiseLike } from './util'
 import { getRights } from './rights'
 import type { Memory } from '../memory'
 import { extendMemory } from '../memory'
-
-function debug (...args: any[]): void {
-  if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
-    console.debug(...args)
-  }
-}
 
 function copyMemory (targets: Uint8Array[], src: Uint8Array): number {
   if (targets.length === 0 || src.length === 0) return 0
@@ -105,8 +99,19 @@ function handleError (err: Error & { code?: string }): WasiErrno {
   throw err
 }
 
-function syscallWrap<T extends (this: any, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (f: T): T {
-  return function (this: any) {
+function defineName<T extends Function> (name: string, f: T): T {
+  Object.defineProperty(f, 'name', { value: name })
+  return f
+}
+
+function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (name: string, f: T): T {
+  return defineName(name, function (this: any) {
+    if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
+      const args = Array.prototype.slice.call(arguments)
+      let debugArgs = [`${name}(${Array.from({ length: arguments.length }).map(() => '%d').join(', ')})`]
+      debugArgs = debugArgs.concat(args)
+      console.debug.apply(console, debugArgs)
+    }
     let r: WasiErrno | PromiseLike<WasiErrno>
     try {
       r = f.apply(this, arguments as any)
@@ -118,7 +123,21 @@ function syscallWrap<T extends (this: any, ...args: any[]) => WasiErrno | Promis
       return r.then(_ => _, handleError)
     }
     return r
-  } as unknown as T
+  }) as unknown as T
+}
+
+function resolvePath (wasi: WrappedData, fileDescriptor: FileDescriptor, path: string, flags: number): string {
+  let resolvedPath = resolve(fileDescriptor.realPath, path)
+  if ((flags & 1) === 1) {
+    try {
+      resolvedPath = wasi.fs!.readlinkSync(resolvedPath) as string
+    } catch (err: any) {
+      if (err.code !== 'EINVAL' && err.code !== 'ENOENT') {
+        throw err
+      }
+    }
+  }
+  return resolvedPath
 }
 
 const encoder = new TextEncoder()
@@ -158,8 +177,7 @@ export class WASI {
     _memory.set(this, extendMemory(m))
   }
 
-  args_get = syscallWrap(function (argv: Pointer<Pointer<u8>>, argv_buf: Pointer<u8>): WasiErrno {
-    debug('args_get(%d, %d)', argv, argv_buf)
+  args_get = syscallWrap('args_get', function (argv: Pointer<Pointer<u8>>, argv_buf: Pointer<u8>): WasiErrno {
     argv = Number(argv)
     argv_buf = Number(argv_buf)
     if (argv === 0 || argv_buf === 0) {
@@ -182,8 +200,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  args_sizes_get = syscallWrap(function (argc: Pointer<size>, argv_buf_size: Pointer<size>): WasiErrno {
-    debug('args_sizes_get(%d, %d)', argc, argv_buf_size)
+  args_sizes_get = syscallWrap('args_sizes_get', function (argc: Pointer<size>, argv_buf_size: Pointer<size>): WasiErrno {
     argc = Number(argc)
     argv_buf_size = Number(argv_buf_size)
     if (argc === 0 || argv_buf_size === 0) {
@@ -197,8 +214,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  environ_get = syscallWrap(function (environ: Pointer<Pointer<u8>>, environ_buf: Pointer<u8>): WasiErrno {
-    debug('environ_get(%d, %d)', environ, environ_buf)
+  environ_get = syscallWrap('environ_get', function (environ: Pointer<Pointer<u8>>, environ_buf: Pointer<u8>): WasiErrno {
     environ = Number(environ)
     environ_buf = Number(environ_buf)
     if (environ === 0 || environ_buf === 0) {
@@ -220,8 +236,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  environ_sizes_get = syscallWrap(function (len: Pointer<size>, buflen: Pointer<size>): WasiErrno {
-    debug('environ_sizes_get(%d, %d)', len, buflen)
+  environ_sizes_get = syscallWrap('environ_sizes_get', function (len: Pointer<size>, buflen: Pointer<size>): WasiErrno {
     len = Number(len)
     buflen = Number(buflen)
     if (len === 0 || buflen === 0) {
@@ -234,8 +249,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  clock_res_get = syscallWrap(function (id: WasiClockid, resolution: Pointer<u64>): WasiErrno {
-    debug('clock_res_get(%d, %d)', id, resolution)
+  clock_res_get = syscallWrap('clock_res_get', function (id: WasiClockid, resolution: Pointer<u64>): WasiErrno {
     resolution = Number(resolution)
     if (resolution === 0) {
       return WasiErrno.EINVAL
@@ -255,8 +269,7 @@ export class WASI {
     }
   })
 
-  clock_time_get = syscallWrap(function (id: WasiClockid, percision: u64, time: Pointer<u64>): WasiErrno {
-    debug('clock_time_get(%d, %d, %d)', id, percision, time)
+  clock_time_get = syscallWrap('clock_time_get', function (id: WasiClockid, _percision: u64, time: Pointer<u64>): WasiErrno {
     time = Number(time)
     if (time === 0) {
       return WasiErrno.EINVAL
@@ -283,13 +296,11 @@ export class WASI {
     }
   })
 
-  fd_advise = function (fd: Handle, offset: filesize, len: filesize, advice: u8): WasiErrno {
-    debug('fd_advise(%d, %d, %d, %d)', fd, offset, len, advice)
+  fd_advise = syscallWrap('fd_advise', function (_fd: fd, _offset: filesize, _len: filesize, _advice: u8): WasiErrno {
     return WasiErrno.ENOSYS
-  }
+  })
 
-  fd_allocate = syscallWrap(function (fd: Handle, offset: filesize, len: filesize): WasiErrno {
-    debug('fd_allocate(%d, %d, %d)', fd, offset, len)
+  fd_allocate = syscallWrap('fd_allocate', function (fd: fd, offset: filesize, len: filesize): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_ALLOCATE, BigInt(0))
     const stat = wasi.fs!.fstatSync(fileDescriptor.fd, { bigint: true })
@@ -299,8 +310,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_close = syscallWrap(function (fd: Handle): WasiErrno {
-    debug('fd_close(%d)', fd)
+  fd_close = syscallWrap('fd_close', function (fd: fd): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
     wasi.fs!.closeSync(fileDescriptor.fd)
@@ -308,16 +318,14 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_datasync = syscallWrap(function (fd: Handle): WasiErrno {
-    debug('fd_datasync(%d)', fd)
+  fd_datasync = syscallWrap('fd_datasync', function (fd: fd): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_DATASYNC, BigInt(0))
     wasi.fs!.fdatasyncSync(fileDescriptor.fd)
     return WasiErrno.ESUCCESS
   })
 
-  fd_fdstat_get = syscallWrap(function (fd: Handle, fdstat: Pointer): WasiErrno {
-    debug('fd_fdstat_get(%d, %d)', fd, fdstat)
+  fd_fdstat_get = syscallWrap('fd_fdstat_get', function (fd: fd, fdstat: Pointer): WasiErrno {
     fdstat = Number(fdstat)
     if (fdstat === 0) {
       return WasiErrno.EINVAL
@@ -332,13 +340,11 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_fdstat_set_flags = function (fd: Handle, flags: number): WasiErrno {
-    debug('fd_fdstat_set_flags(%d, %d)', fd, flags)
+  fd_fdstat_set_flags = syscallWrap('fd_fdstat_set_flags', function (_fd: fd, _flags: number): WasiErrno {
     return WasiErrno.ENOSYS
-  }
+  })
 
-  fd_fdstat_set_rights = syscallWrap(function (fd: Handle, rightsBase: bigint, rightsInheriting: bigint): WasiErrno {
-    debug('fd_fdstat_set_rights(%d, %d, %d)', fd, rightsBase, rightsInheriting)
+  fd_fdstat_set_rights = syscallWrap('fd_fdstat_set_rights', function (fd: fd, rightsBase: bigint, rightsInheriting: bigint): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
     if ((rightsBase | fileDescriptor.rightsBase) > fileDescriptor.rightsBase) {
@@ -355,8 +361,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_filestat_get = syscallWrap(function (fd: Handle, buf: Pointer): WasiErrno {
-    debug('fd_filestat_get(%d, %d)', fd, buf)
+  fd_filestat_get = syscallWrap('fd_filestat_get', function (fd: fd, buf: Pointer): WasiErrno {
     buf = Number(buf)
     if (buf === 0) return WasiErrno.EINVAL
     const wasi = _wasi.get(this)!
@@ -367,18 +372,14 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_filestat_set_size = syscallWrap(function (fd: Handle, size: filesize): WasiErrno {
-    debug('fd_filestat_set_size(%d, %d)', fd, size)
-
+  fd_filestat_set_size = syscallWrap('fd_filestat_set_size', function (fd: fd, size: filesize): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_SET_SIZE, BigInt(0))
     wasi.fs!.ftruncateSync(fileDescriptor.fd, Number(size))
     return WasiErrno.ESUCCESS
   })
 
-  fd_filestat_set_times = syscallWrap(function (fd: Handle, atim: bigint, mtim: bigint, flags: WasiFstFlag): WasiErrno {
-    debug('fd_filestat_set_times(%d, %d, %d, %d)', fd, atim, mtim, flags)
-
+  fd_filestat_set_times = syscallWrap('fd_filestat_set_times', function (fd: fd, atim: bigint, mtim: bigint, flags: WasiFstFlag): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_SET_TIMES, BigInt(0))
     if ((flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
@@ -392,8 +393,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_prestat_get = function (this: WASI, fd: Handle, prestat: Pointer): WasiErrno {
-    debug('fd_prestat_get(%d, %d)', fd, prestat)
+  fd_prestat_get = syscallWrap('fd_prestat_get', function (this: WASI, fd: fd, prestat: Pointer): WasiErrno {
     prestat = Number(prestat)
     if (prestat === 0) {
       return WasiErrno.EINVAL
@@ -413,10 +413,9 @@ export class WASI {
     view.setUint32(prestat, 0, true)
     view.setUint32(prestat + 4, encoder.encode(fileDescriptor.path).length + 1, true)
     return WasiErrno.ESUCCESS
-  }
+  })
 
-  fd_prestat_dir_name = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
-    debug('fd_prestat_dir_name(%d, %d, %d)', fd, path, path_len)
+  fd_prestat_dir_name = syscallWrap('fd_prestat_dir_name', function (fd: fd, path: Pointer<u8>, path_len: size): WasiErrno {
     path = Number(path)
     path_len = Number(path_len)
     if (path === 0) {
@@ -434,8 +433,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_read = syscallWrap(function (fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
-    debug('fd_read(%d, %d, %d, %d)', fd, iovs, iovslen, size)
+  fd_read = syscallWrap('fd_read', function (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
     iovs = Number(iovs)
     size = Number(size)
     if (iovs === 0 || size === 0) {
@@ -472,8 +470,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_seek = syscallWrap(function (fd: Handle, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
-    debug('fd_seek(%d, %d, %d, %d)', fd, offset, whence, newOffset)
+  fd_seek = syscallWrap('fd_seek', function (fd: fd, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
     newOffset = Number(newOffset)
     if (newOffset === 0) {
       return WasiErrno.EINVAL
@@ -486,8 +483,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_write = syscallWrap(function (fd: Handle, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
-    debug('fd_write(%d, %d, %d, %d)', fd, iovs, iovslen, size)
+  fd_write = syscallWrap('fd_write', function (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
     iovs = Number(iovs)
     size = Number(size)
     if (iovs === 0 || size === 0) {
@@ -516,8 +512,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  path_create_directory = syscallWrap(function (fd: Handle, path: Pointer<u8>, path_len: size): WasiErrno {
-    debug('path_create_directory(%d, %d, %d)', fd, path, path_len)
+  path_create_directory = syscallWrap('path_create_directory', function (fd: fd, path: Pointer<u8>, path_len: size): WasiErrno {
     path = Number(path)
     path_len = Number(path_len)
     if (path === 0) {
@@ -534,8 +529,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  path_filestat_get = syscallWrap(function (fd: Handle, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
-    debug('path_filestat_get(%d, %d, %d, %d, %d)', fd, flags, path, path_len, filestat)
+  path_filestat_get = syscallWrap('path_filestat_get', function (fd: fd, flags: number, path: Pointer<u8>, path_len: size, filestat: Pointer): WasiErrno {
     path = Number(path)
     path_len = Number(path_len)
     filestat = Number(filestat)
@@ -561,8 +555,8 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  path_open = syscallWrap(function (
-    dirfd: Handle,
+  path_open = syscallWrap('path_open', function (
+    dirfd: fd,
     dirflags: number,
     path: Pointer<u8>,
     path_len: size,
@@ -570,19 +564,8 @@ export class WASI {
     fs_rights_base: bigint,
     fs_rights_inheriting: bigint,
     fs_flags: u16,
-    fd: Pointer<Handle>
+    fd: Pointer<fd>
   ): WasiErrno {
-    debug('path_open(%d, %d, %d, %d, %d, %d, %d, %d, %d)',
-      dirfd,
-      dirflags,
-      path,
-      path_len,
-      o_flags,
-      fs_rights_base,
-      fs_rights_inheriting,
-      fs_flags,
-      fd
-    )
     path = Number(path)
     fd = Number(fd)
     if (path === 0 || fd === 0) {
@@ -642,7 +625,7 @@ export class WASI {
     const memory = getMemory(this)
     const HEAPU8 = memory.HEAPU8
     const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
-    const resolved_path = resolve(fileDescriptor.realPath, pathString)
+    const resolved_path = resolvePath(wasi, fileDescriptor, pathString, dirflags)
     const r = wasi.fs!.openSync(resolved_path, flags, 0o666)
     const filetype = wasi.fds.getFileTypeByFd(r)
     if ((o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0 && filetype !== WasiFileType.DIRECTORY) {
@@ -663,24 +646,20 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  proc_exit = syscallWrap(function (rval: exitcode): WasiErrno {
-    debug(`proc_exit(${rval})`)
+  proc_exit = syscallWrap('proc_exit', function (_rval: exitcode): WasiErrno {
     return WasiErrno.ESUCCESS
   })
 
-  proc_raise = syscallWrap(function (sig: number): WasiErrno {
-    debug(`proc_raise(${sig})`)
+  proc_raise = syscallWrap('proc_raise', function (_sig: number): WasiErrno {
     return WasiErrno.ENOSYS
   })
 
-  sched_yield = syscallWrap(function (): WasiErrno {
-    debug('sched_yield()')
+  sched_yield = syscallWrap('sched_yield', function (): WasiErrno {
     return WasiErrno.ESUCCESS
   })
 
   random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
-    ? syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
-      debug('random_get(%d, %d)', buf, buf_len)
+    ? syscallWrap('random_get', function (buf: Pointer<u8>, buf_len: size): WasiErrno {
       buf = Number(buf)
       if (buf === 0) {
         return WasiErrno.EINVAL
@@ -698,8 +677,7 @@ export class WASI {
 
       return WasiErrno.ESUCCESS
     })
-    : syscallWrap(function (buf: Pointer<u8>, buf_len: size): WasiErrno {
-      debug('random_get(%d, %d)', buf, buf_len)
+    : syscallWrap('random_get', function (buf: Pointer<u8>, buf_len: size): WasiErrno {
       buf = Number(buf)
       if (buf === 0) {
         return WasiErrno.EINVAL
@@ -714,18 +692,15 @@ export class WASI {
       return WasiErrno.ESUCCESS
     })
 
-  sock_recv = syscallWrap(function (): WasiErrno {
-    debug('sock_recv(unimplemented)')
+  sock_recv = syscallWrap('sock_recv', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 
-  sock_send = syscallWrap(function (): WasiErrno {
-    debug('sock_send(unimplemented)')
+  sock_send = syscallWrap('sock_send', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 
-  sock_shutdown = syscallWrap(function (): WasiErrno {
-    debug('sock_shutdown(unimplemented)')
+  sock_shutdown = syscallWrap('sock_shutdown', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 }

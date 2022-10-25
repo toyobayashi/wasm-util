@@ -179,10 +179,9 @@ export type u16 = number
 export type u32 = number
 export type s64 = bigint
 export type u64 = bigint
-export type Handle = number
+export type fd = number
 export type filedelta = s64
 export type filesize = u64
 export type size = u32 | u64
 export type exitcode = u32
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export type Pointer<_T = any> = number | bigint
+export type Pointer<T extends (number | bigint) = number | bigint> = number | bigint | T

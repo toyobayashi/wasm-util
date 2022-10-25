@@ -56,13 +56,16 @@ export interface WASIOptions {
 }
 
 /** @public */
+export type WasiSnapshotPreview1 = Omit<_WASI, '_setMemory'>
+
+/** @public */
 export class WASI {
   private [kSetMemory]: (m: WebAssembly.Memory) => void
   private [kStarted]: boolean
   private [kExitCode]: number
   private [kInstance]: WebAssembly.Instance | undefined
 
-  public readonly wasiImport: Record<string, any>
+  public readonly wasiImport: WasiSnapshotPreview1
 
   constructor (options: WASIOptions = kEmptyObject) {
     validateObject(options, 'options')
