@@ -27,7 +27,7 @@ import type {
 } from './types'
 
 import { FileDescriptorTable, concatBuffer, toFileStat } from './fd'
-import type { FileDescriptor } from './fd'
+import type { FileDescriptor, StandardOutput } from './fd'
 import { WasiError } from './error'
 import { isPromiseLike } from './util'
 import { getRights } from './rights'
@@ -153,6 +153,13 @@ function resolvePath (wasi: WrappedData, fileDescriptor: FileDescriptor, path: s
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+
+function readStdin (): Uint8Array {
+  const value = window.prompt()
+  if (value === null) return new Uint8Array()
+  const buffer = new TextEncoder().encode(value + '\n')
+  return buffer
+}
 
 export class WASI {
   constructor (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number], filesystem: false | { type: 'memfs'; fs: IFs }) {
@@ -467,7 +474,7 @@ export class WASI {
     let buffer: Uint8Array
     let nread: number = 0
     if (fd === 0) {
-      buffer = (fileDescriptor as any).stream?.read()
+      buffer = readStdin()
       nread = buffer ? copyMemory(ioVecs, buffer) : 0
     } else {
       buffer = new Uint8Array(totalSize)
@@ -486,6 +493,7 @@ export class WASI {
     if (newOffset === 0) {
       return WasiErrno.EINVAL
     }
+    if (fd === 0 || fd === 1 || fd === 2) return WasiErrno.ESUCCESS
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SEEK, BigInt(0))
     const r = fileDescriptor.seek(offset, whence)
@@ -596,7 +604,7 @@ export class WASI {
     }))
     let nwritten: number
     if (fd === 1 || fd === 2) {
-      nwritten = (fileDescriptor as any).stream?.write(buffer) ?? 0
+      nwritten = (fileDescriptor as StandardOutput).write(buffer)
     } else {
       nwritten = wasi.fs!.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
       fileDescriptor.pos += BigInt(nwritten)

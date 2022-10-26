@@ -28,7 +28,6 @@ export function concatBuffer (buffers: Uint8Array[], size?: number): Uint8Array 
 }
 
 export class FileDescriptor {
-  public stream: any = undefined
   public pos = BigInt(0)
   public size = BigInt(0)
 
@@ -57,26 +56,24 @@ export class FileDescriptor {
   }
 }
 
-class StandardInput {
-  seek (_offset: number, _whence: WasiWhence): void {}
-
-  read (): Uint8Array {
-    const value = window.prompt()
-    if (value === null) return new Uint8Array()
-    const buffer = new TextEncoder().encode(value + '\n')
-    return buffer
-  }
-}
-
-class StandardOutput {
+export class StandardOutput extends FileDescriptor {
   private readonly _print: (str: string) => void
   private _buf: Uint8Array | null
-  constructor (print: (str: string) => void) {
+  constructor (
+    print: (str: string) => void,
+    id: number,
+    fd: number,
+    path: string,
+    realPath: string,
+    type: WasiFileType,
+    rightsBase: bigint,
+    rightsInheriting: bigint,
+    preopen: number
+  ) {
+    super(id, fd, path, realPath, type, rightsBase, rightsInheriting, preopen)
     this._print = print
     this._buf = null
   }
-
-  seek (_offset: number, _whence: WasiWhence): void {}
 
   write (buffer: Uint8Array): number {
     if (this._buf) {
@@ -143,20 +140,19 @@ export class FileDescriptorTable {
     this.stdio = [options.in, options.out, options.err]
     this.fs = options.fs
 
-    this.insertStdio(options.in, 0, '<stdin>', new StandardInput())
-    this.insertStdio(options.out, 1, '<stdout>', new StandardOutput(console.log))
-    this.insertStdio(options.err, 2, '<stderr>', new StandardOutput(console.error))
+    this.insertStdio(options.in, 0, '<stdin>')
+    this.insertStdio(options.out, 1, '<stdout>')
+    this.insertStdio(options.err, 2, '<stderr>')
   }
 
   private insertStdio (
     fd: number,
     expected: number,
-    name: string,
-    stream: StandardInput | StandardOutput
+    name: string
   ): FileDescriptor {
     const type = WasiFileType.CHARACTER_DEVICE
     const { base, inheriting } = getRights(this.stdio, fd, 2, type)
-    const wrap = this.insert(fd, name, name, type, base, inheriting, 0, stream)
+    const wrap = this.insert(fd, name, name, type, base, inheriting, 0)
     if (wrap.id !== expected) {
       throw new WasiError(`id: ${wrap.id} !== expected: ${expected}`, WasiErrno.EBADF)
     }
@@ -170,8 +166,7 @@ export class FileDescriptorTable {
     type: WasiFileType,
     rightsBase: bigint,
     rightsInheriting: bigint,
-    preopen: number,
-    stream?: any
+    preopen: number
   ): FileDescriptor {
     let index = -1
     if (this.used >= this.size) {
@@ -188,17 +183,44 @@ export class FileDescriptorTable {
       }
     }
 
-    const entry = new FileDescriptor(
-      index,
-      fd,
-      mappedPath,
-      realPath,
-      type,
-      rightsBase,
-      rightsInheriting,
-      preopen
-    )
-    if (stream) entry.stream = stream
+    let entry: FileDescriptor
+    if (mappedPath === '<stdout>') {
+      entry = new StandardOutput(
+        console.log,
+        index,
+        fd,
+        mappedPath,
+        realPath,
+        type,
+        rightsBase,
+        rightsInheriting,
+        preopen
+      )
+    } else if (mappedPath === '<stderr>') {
+      entry = new StandardOutput(
+        console.error,
+        index,
+        fd,
+        mappedPath,
+        realPath,
+        type,
+        rightsBase,
+        rightsInheriting,
+        preopen
+      )
+    } else {
+      entry = new FileDescriptor(
+        index,
+        fd,
+        mappedPath,
+        realPath,
+        type,
+        rightsBase,
+        rightsInheriting,
+        preopen
+      )
+    }
+
     this.fds[index] = entry
     this.used++
     return entry
