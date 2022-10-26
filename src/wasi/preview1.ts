@@ -179,7 +179,8 @@ export class WASI {
     })
 
     if (preopens.length > 0) {
-      if (!filesystem || !fs) throw new Error('filesystem is disabled')
+      if (!filesystem) throw new Error('filesystem is disabled, can not preopen directory')
+      if (!fs) throw new Error('Node.js fs like implementation is not provided, can not preopen directory')
       for (let i = 0; i < preopens.length; ++i) {
         const realPath = fs.realpathSync(preopens[i].realPath, 'utf8') as string
         const fd = fs.openSync(realPath, 'r', 0o666)
@@ -411,6 +412,37 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
+  fd_pread = syscallWrap('fd_pread', function (fd: fd, iovs: Pointer, iovslen: size, offset: filesize, size: Pointer<size>): WasiErrno {
+    iovs = Number(iovs)
+    size = Number(size)
+    if (iovs === 0 || size === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8, view } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ | WasiRights.FD_SEEK, BigInt(0))
+
+    let totalSize = 0
+    const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
+      const offset = (iovs as number) + (i * 8)
+      const buf = view.getInt32(offset, true)
+      const bufLen = view.getUint32(offset + 4, true)
+      totalSize += bufLen
+      return HEAPU8.subarray(buf, buf + bufLen)
+    })
+
+    let nread: number = 0
+
+    const buffer = new Uint8Array(totalSize)
+    ;(buffer as any)._isBuffer = true
+    const bytesRead = wasi.fs!.readSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(offset))
+    nread = buffer ? copyMemory(ioVecs, buffer.subarray(0, bytesRead)) : 0
+
+    view.setUint32(size, nread, true)
+    return WasiErrno.ESUCCESS
+  })
+
   fd_prestat_get = syscallWrap('fd_prestat_get', function (this: WASI, fd: fd, prestat: Pointer): WasiErrno {
     prestat = Number(prestat)
     if (prestat === 0) {
@@ -448,6 +480,30 @@ export class WASI {
     if (size > path_len) return WasiErrno.ENOBUFS
     const { HEAPU8 } = getMemory(this)
     HEAPU8.set(buffer, path)
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_pwrite = syscallWrap('fd_pwrite', function (fd: fd, iovs: Pointer, iovslen: size, offset: filesize, size: Pointer<size>): WasiErrno {
+    iovs = Number(iovs)
+    size = Number(size)
+    if (iovs === 0 || size === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8, view } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE | WasiRights.FD_SEEK, BigInt(0))
+
+    const buffer = concatBuffer(Array.from({ length: Number(iovslen) }, (_, i) => {
+      const offset = (iovs as number) + (i * 8)
+      const buf = view.getInt32(offset, true)
+      const bufLen = view.getUint32(offset + 4, true)
+      return HEAPU8.subarray(buf, buf + bufLen)
+    }))
+
+    const nwritten = wasi.fs!.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(offset))
+
+    view.setUint32(size, nwritten, true)
     return WasiErrno.ESUCCESS
   })
 

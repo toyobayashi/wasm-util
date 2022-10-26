@@ -18,10 +18,10 @@
 - [x] fd_filestat_get
 - [x] fd_filestat_set_size
 - [x] fd_filestat_set_times
-- [ ] fd_pread
+- [x] fd_pread
 - [x] fd_prestat_get
 - [x] fd_prestat_dir_name
-- [ ] fd_pwrite
+- [x] fd_pwrite
 - [x] fd_read
 - [x] fd_readdir
 - [x] fd_renumber

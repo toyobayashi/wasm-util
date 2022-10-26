@@ -55,8 +55,8 @@ export interface WASIOptions {
   filesystem?: false | { type: 'memfs'; fs: IFs }
 }
 
-/** @public */
-export type WasiSnapshotPreview1 = Omit<_WASI, '_setMemory'>
+// /** @public */
+// export type WasiSnapshotPreview1 = Omit<_WASI, '_setMemory'>
 
 /** @public */
 export class WASI {
@@ -65,7 +65,7 @@ export class WASI {
   private [kExitCode]: number
   private [kInstance]: WebAssembly.Instance | undefined
 
-  public readonly wasiImport: WasiSnapshotPreview1
+  public readonly wasiImport: Record<string, any>
 
   constructor (options: WASIOptions = kEmptyObject) {
     validateObject(options, 'options')
