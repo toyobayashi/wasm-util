@@ -23,23 +23,23 @@
 - [x] fd_prestat_dir_name
 - [ ] fd_pwrite
 - [x] fd_read
-- [ ] fd_readdir
-- [ ] fd_renumber
+- [x] fd_readdir
+- [x] fd_renumber
 - [x] fd_seek
-- [ ] fd_sync
-- [ ] fd_tell
+- [x] fd_sync
+- [x] fd_tell
 - [x] fd_write
 - [x] path_create_directory
 - [x] path_filestat_get
-- [ ] path_filestat_set_times
-- [ ] path_link
+- [x] path_filestat_set_times
+- [x] path_link
 - [x] path_open
-- [ ] path_readlink
-- [ ] path_remove_directory
-- [ ] path_rename
-- [ ] path_symlink
-- [ ] path_unlink_file
-- [ ] poll_oneoff
+- [x] path_readlink
+- [x] path_remove_directory
+- [x] path_rename
+- [x] path_symlink
+- [x] path_unlink_file
+- [ ] ~~poll_oneoff~~
 - [x] proc_exit
 - [ ] ~~proc_raise~~
 - [x] sched_yield

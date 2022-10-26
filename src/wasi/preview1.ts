@@ -61,6 +61,17 @@ interface WrappedData {
   fs?: IFs
 }
 
+interface Dirent {
+  name: string
+  isDirectory(): boolean
+  isFile(): boolean
+  isBlockDevice(): boolean
+  isCharacterDevice(): boolean
+  isSymbolicLink(): boolean
+  isFIFO(): boolean
+  isSocket(): boolean
+}
+
 export interface Preopen {
   mappedPath: string
   realPath: string
@@ -483,6 +494,89 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
+  fd_readdir = syscallWrap('fd_readdir', function (fd: fd, buf: Pointer, buf_len: size, cookie: bigint, bufused: Pointer): WasiErrno {
+    buf = Number(buf)
+    buf_len = Number(buf_len)
+    bufused = Number(bufused)
+
+    if (buf === 0 || bufused === 0) return WasiErrno.ESUCCESS
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READDIR, BigInt(0))
+    const entries = wasi.fs!.readdirSync(fileDescriptor.realPath, { withFileTypes: true }) as Dirent[]
+    const { HEAPU8, view } = getMemory(this)
+    let bufferUsed = 0
+    for (let i = Number(cookie); i < entries.length; i++) {
+      const nameData = encoder.encode(entries[i].name)
+
+      const entryInfo = wasi.fs!.statSync(
+        resolve(fileDescriptor.realPath, entries[i].name),
+        { bigint: true }
+      )
+      const entryData = new Uint8Array(24 + nameData.byteLength)
+      const entryView = new DataView(entryData.buffer)
+
+      entryView.setBigUint64(0, BigInt(i + 1), true)
+      entryView.setBigUint64(
+        8,
+        BigInt(entryInfo.ino ? entryInfo.ino : 0),
+        true
+      )
+      entryView.setUint32(16, nameData.byteLength, true)
+
+      let type: number
+      if (entries[i].isFile()) {
+        type = WasiFileType.REGULAR_FILE
+      } else if (entries[i].isDirectory()) {
+        type = WasiFileType.DIRECTORY
+      } else if (entries[i].isSymbolicLink()) {
+        type = WasiFileType.SYMBOLIC_LINK
+      } else if (entries[i].isCharacterDevice()) {
+        type = WasiFileType.CHARACTER_DEVICE
+      } else if (entries[i].isBlockDevice()) {
+        type = WasiFileType.BLOCK_DEVICE
+      } else if (entries[i].isSocket()) {
+        type = WasiFileType.SOCKET_STREAM
+      } else {
+        type = WasiFileType.UNKNOWN
+      }
+
+      entryView.setUint8(20, type)
+      entryData.set(nameData, 24)
+
+      const data = entryData.slice(
+        0,
+        Math.min(entryData.length, buf_len - bufferUsed)
+      )
+      HEAPU8.set(data, buf + bufferUsed)
+      bufferUsed += data.byteLength
+    }
+
+    view.setUint32(bufused, bufferUsed, true)
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_renumber = syscallWrap('fd_renumber', function (from: fd, to: fd): WasiErrno {
+    const wasi = _wasi.get(this)!
+    wasi.fds.renumber(to, from)
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_sync = syscallWrap('fd_sync', function (fd: fd): WasiErrno {
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SYNC, BigInt(0))
+    wasi.fs!.fsyncSync(fileDescriptor.fd)
+    return WasiErrno.ESUCCESS
+  })
+
+  fd_tell = syscallWrap('fd_tell', function (fd: fd, offset: Pointer): WasiErrno {
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_TELL, BigInt(0))
+    const pos = BigInt(fileDescriptor.pos)
+    const { view } = getMemory(this)
+    view.setBigUint64(Number(offset), pos, true)
+    return WasiErrno.ESUCCESS
+  })
+
   fd_write = syscallWrap('fd_write', function (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
     iovs = Number(iovs)
     size = Number(size)
@@ -552,6 +646,57 @@ export class WASI {
     }
 
     toFileStat(view, filestat, stat)
+    return WasiErrno.ESUCCESS
+  })
+
+  path_filestat_set_times = syscallWrap('path_filestat_set_times', function (fd: fd, flags: number, path: Pointer<u8>, path_len: size, atim: bigint, mtim: bigint, fst_flags: WasiFstFlag): WasiErrno {
+    path = Number(path)
+    path_len = Number(path_len)
+    if (path === 0) return WasiErrno.EINVAL
+    if ((fst_flags) & ~(WasiFstFlag.SET_ATIM |
+                        WasiFstFlag.SET_ATIM_NOW |
+                        WasiFstFlag.SET_MTIM |
+                        WasiFstFlag.SET_MTIM_NOW)) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8 } = getMemory(this)
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
+    const resolvedPath = resolvePath(wasi, fileDescriptor, decoder.decode(HEAPU8.subarray(path, path + path_len)), flags)
+    if ((fst_flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
+      atim = BigInt(Date.now() * 1000000)
+    }
+
+    if ((fst_flags & WasiFstFlag.SET_MTIM_NOW) === WasiFstFlag.SET_MTIM_NOW) {
+      mtim = BigInt(Date.now() * 1000000)
+    }
+    wasi.fs!.utimesSync(resolvedPath, Number(atim), Number(mtim))
+    return WasiErrno.ESUCCESS
+  })
+
+  path_link = syscallWrap('path_link', function (old_fd: fd, old_flags: number, old_path: Pointer<u8>, old_path_len: size, new_fd: fd, new_path: Pointer<u8>, new_path_len: size): WasiErrno {
+    old_path = Number(old_path)
+    old_path_len = Number(old_path_len)
+    new_path = Number(new_path)
+    new_path_len = Number(new_path_len)
+    if (old_path === 0 || new_path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const wasi = _wasi.get(this)!
+    let oldWrap: FileDescriptor
+    let newWrap: FileDescriptor
+    if (old_fd === new_fd) {
+      oldWrap = newWrap = wasi.fds.get(old_fd, WasiRights.PATH_LINK_SOURCE | WasiRights.PATH_LINK_TARGET, BigInt(0))
+    } else {
+      oldWrap = wasi.fds.get(old_fd, WasiRights.PATH_LINK_SOURCE, BigInt(0))
+      newWrap = wasi.fds.get(new_fd, WasiRights.PATH_LINK_TARGET, BigInt(0))
+    }
+    const { HEAPU8 } = getMemory(this)
+    const resolvedOldPath = resolvePath(wasi, oldWrap, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)), old_flags)
+    const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
+
+    wasi.fs!.linkSync(resolvedOldPath, resolvedNewPath)
+
     return WasiErrno.ESUCCESS
   })
 
@@ -644,6 +789,124 @@ export class WASI {
     view.setInt32(fd, wrap.id, true)
 
     return WasiErrno.ESUCCESS
+  })
+
+  path_readlink = syscallWrap('path_readlink', function (fd: fd, path: Pointer<u8>, path_len: size, buf: Pointer, buf_len: size, bufused: Pointer): WasiErrno {
+    path = Number(path)
+    path_len = Number(path_len)
+    buf = Number(buf)
+    buf_len = Number(buf_len)
+    bufused = Number(bufused)
+    if (path === 0 || buf === 0 || bufused === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8, view } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_READLINK, BigInt(0))
+    let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+
+    pathString = resolve(fileDescriptor.realPath, pathString)
+
+    const link = wasi.fs!.readlinkSync(pathString) as string
+    const linkData = encoder.encode(link)
+    const len = Math.min(linkData.length, buf_len)
+    if (len >= buf_len) return WasiErrno.ENOBUFS
+    HEAPU8.set(linkData.subarray(0, len), buf)
+    HEAPU8[buf + len] = 0
+    view.setUint32(bufused, len + 1, true)
+
+    return WasiErrno.ESUCCESS
+  })
+
+  path_remove_directory = syscallWrap('path_remove_directory', function (fd: fd, path: Pointer<u8>, path_len: size): WasiErrno {
+    path = Number(path)
+    path_len = Number(path_len)
+    if (path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_REMOVE_DIRECTORY, BigInt(0))
+    let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+
+    pathString = resolve(fileDescriptor.realPath, pathString)
+
+    wasi.fs!.rmdirSync(pathString)
+
+    return WasiErrno.ESUCCESS
+  })
+
+  path_rename = syscallWrap('path_rename', function (old_fd: fd, old_path: Pointer<u8>, old_path_len: size, new_fd: fd, new_path: Pointer<u8>, new_path_len: size): WasiErrno {
+    old_path = Number(old_path)
+    old_path_len = Number(old_path_len)
+    new_path = Number(new_path)
+    new_path_len = Number(new_path_len)
+    if (old_path === 0 || new_path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const wasi = _wasi.get(this)!
+    let oldWrap: FileDescriptor
+    let newWrap: FileDescriptor
+    if (old_fd === new_fd) {
+      oldWrap = newWrap = wasi.fds.get(old_fd, WasiRights.PATH_RENAME_SOURCE | WasiRights.PATH_RENAME_TARGET, BigInt(0))
+    } else {
+      oldWrap = wasi.fds.get(old_fd, WasiRights.PATH_RENAME_SOURCE, BigInt(0))
+      newWrap = wasi.fds.get(new_fd, WasiRights.PATH_RENAME_TARGET, BigInt(0))
+    }
+    const { HEAPU8 } = getMemory(this)
+    const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)))
+    const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
+
+    wasi.fs!.renameSync(resolvedOldPath, resolvedNewPath)
+
+    return WasiErrno.ESUCCESS
+  })
+
+  path_symlink = syscallWrap('path_symlink', function (old_path: Pointer<u8>, old_path_len: size, fd: fd, new_path: Pointer<u8>, new_path_len: size): WasiErrno {
+    old_path = Number(old_path)
+    old_path_len = Number(old_path_len)
+    new_path = Number(new_path)
+    new_path_len = Number(new_path_len)
+    if (old_path === 0 || new_path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_SYMLINK, BigInt(0))
+    const oldPath = decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len))
+    let newPath = decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len))
+
+    newPath = resolve(fileDescriptor.realPath, newPath)
+
+    wasi.fs!.symlinkSync(oldPath, newPath)
+
+    return WasiErrno.ESUCCESS
+  })
+
+  path_unlink_file = syscallWrap('path_unlink_file', function (fd: fd, path: Pointer<u8>, path_len: size): WasiErrno {
+    path = Number(path)
+    path_len = Number(path_len)
+    if (path === 0) {
+      return WasiErrno.EINVAL
+    }
+    const { HEAPU8 } = getMemory(this)
+
+    const wasi = _wasi.get(this)!
+    const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_UNLINK_FILE, BigInt(0))
+    let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+
+    pathString = resolve(fileDescriptor.realPath, pathString)
+
+    wasi.fs!.unlinkSync(pathString)
+
+    return WasiErrno.ESUCCESS
+  })
+
+  poll_oneoff = syscallWrap('poll_oneoff', function (_in: Pointer, _out: Pointer, _sub: size, _nevents: Pointer): WasiErrno {
+    return WasiErrno.ENOSYS
   })
 
   proc_exit = syscallWrap('proc_exit', function (_rval: exitcode): WasiErrno {

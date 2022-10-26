@@ -248,4 +248,21 @@ export class FileDescriptorTable {
     this.fds[id] = undefined!
     this.used--
   }
+
+  renumber (dst: number, src: number): void {
+    if (dst === src) return
+    if (dst >= this.size || src >= this.size) {
+      throw new WasiError('Invalid fd', WasiErrno.EBADF)
+    }
+    const dstEntry = this.fds[dst]
+    const srcEntry = this.fds[src]
+    if (!dstEntry || !srcEntry || dstEntry.id !== dst || srcEntry.id !== src) {
+      throw new WasiError('Invalid fd', WasiErrno.EBADF)
+    }
+    this.fs!.closeSync(dstEntry.fd)
+    this.fds[dst] = this.fds[src]
+    this.fds[dst].id = dst
+    this.fds[src] = undefined!
+    this.used--
+  }
 }
