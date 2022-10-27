@@ -29,7 +29,11 @@ export async function load (
 
   if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
     source = await WebAssembly.instantiate(urlOrBuffer, imports)
-    if (asyncify) asyncifyHelper!.init(imports, source.instance, asyncify)
+    if (asyncify) {
+      const instance = Object.create(WebAssembly.Instance.prototype)
+      Object.defineProperty(instance, 'exports', { value: asyncifyHelper!.init(imports, source.instance, asyncify) })
+      return { module: source.module, instance }
+    }
     return source
   }
 
@@ -46,7 +50,11 @@ export async function load (
   } else {
     source = await fetchWasm(urlOrBuffer, imports)
   }
-  if (asyncify) asyncifyHelper!.init(imports, source.instance, asyncify)
+  if (asyncify) {
+    const instance = Object.create(WebAssembly.Instance.prototype)
+    Object.defineProperty(instance, 'exports', { value: asyncifyHelper!.init(imports, source.instance, asyncify) })
+    return { module: source.module, instance }
+  }
   return source
 }
 
@@ -75,6 +83,10 @@ export function loadSync (
   const module = new WebAssembly.Module(buffer)
   const instance = new WebAssembly.Instance(module, imports)
   const source = { instance, module }
-  if (asyncify) asyncifyHelper!.init(imports, instance, asyncify)
+  if (asyncify) {
+    const instance = Object.create(WebAssembly.Instance.prototype)
+    Object.defineProperty(instance, 'exports', { value: asyncifyHelper!.init(imports, instance, asyncify) })
+    return { module: source.module, instance }
+  }
   return source
 }

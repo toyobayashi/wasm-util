@@ -16,6 +16,14 @@ const enum AsyncifyState {
   REWINDING,
 }
 
+/** @public */
+export type AsyncifyExportName =
+  'asyncify_get_state' |
+  'asyncify_start_unwind' |
+  'asyncify_stop_unwind' |
+  'asyncify_start_rewind' |
+  'asyncify_stop_rewind'
+
 type AsyncifiedExports = {
   asyncify_get_state: () => AsyncifyState
   asyncify_start_unwind: (p: number | bigint) => void
@@ -32,9 +40,15 @@ export type Callable = (...args: any[]) => any
 export type AsyncifyExportFunction<T> = T extends Callable ? (...args: Parameters<T>) => Promise<ReturnType<T>> : T
 
 /** @public */
-export type AsyncifyExports<T> = T extends Record<string, any>
+export type AsyncifyExports<T, U> = T extends Record<string, any>
   ? {
-      [P in keyof T]: T[P] extends Callable ? AsyncifyExportFunction<T[P]> : T[P]
+      [P in keyof T]: T[P] extends Callable
+        ? U extends Array<Exclude<keyof T, AsyncifyExportName>>
+          ? P extends U[number]
+            ? AsyncifyExportFunction<T[P]>
+            : T[P]
+          : AsyncifyExportFunction<T[P]>
+        : T[P]
     }
   : T
 
@@ -45,6 +59,7 @@ export interface AsyncifyOptions {
     size?: number
     name?: string
   }
+  wrapExports?: string[]
 }
 
 interface AsyncifyDataAddress {
@@ -79,8 +94,12 @@ export class Asyncify {
   private exports: AsyncifiedExports | undefined = undefined
   private dataPtr: number = 0
 
-  public init (imports: WebAssembly.Imports, instance: WebAssembly.Instance, options: AsyncifyOptions): void {
-    if (instance instanceof Instance) return
+  public init<T extends WebAssembly.Exports, U extends Array<Exclude<keyof T, AsyncifyExportName>>> (
+    imports: WebAssembly.Imports,
+    instance: { readonly exports: T },
+    options: AsyncifyOptions
+  ): AsyncifyExports<T, U> {
+    if (this.exports) return this.exports as any
     const exports = instance.exports
     const memory = exports.memory || (imports.env?.memory)
     if (!(memory instanceof WebAssembly.Memory)) {
@@ -114,8 +133,9 @@ export class Asyncify {
     } else {
       new Int32Array(memory.buffer, this.dataPtr).set([address.start, address.end])
     }
-    this.exports = this.wrapExports(exports) as any
-    Object.setPrototypeOf(instance, Instance.prototype)
+    this.exports = this.wrapExports(exports, options.wrapExports as any) as any
+    // Object.setPrototypeOf(instance, Instance.prototype)
+    return this.exports as any
   }
 
   private assertState (): void {
@@ -175,11 +195,16 @@ export class Asyncify {
     }) as any
   }
 
-  public wrapExports<T extends WebAssembly.Exports> (exports: T): AsyncifyExports<T> {
+  public wrapExports<T extends WebAssembly.Exports> (exports: T): AsyncifyExports<T, void>
+  public wrapExports<T extends WebAssembly.Exports, U extends Array<Exclude<keyof T, AsyncifyExportName>>> (exports: T, needWrap: U): AsyncifyExports<T, U>
+  public wrapExports<T extends WebAssembly.Exports, U extends Array<Exclude<keyof T, AsyncifyExportName>>> (exports: T, needWrap?: U): AsyncifyExports<T, U> {
     const newExports = Object.create(null)
     Object.keys(exports).forEach(name => {
       const exportValue = exports[name]
-      const ignore = ignoreNames.indexOf(name) !== -1 || typeof exportValue !== 'function'
+      let ignore = ignoreNames.indexOf(name) !== -1 || typeof exportValue !== 'function'
+      if (Array.isArray(needWrap)) {
+        ignore = ignore || (needWrap.indexOf(name as any) === -1)
+      }
       Object.defineProperty(newExports, name, {
         enumerable: true,
         value: ignore ? exportValue : this.wrapExportFunction(exportValue as any)
@@ -191,17 +216,17 @@ export class Asyncify {
   }
 }
 
-/** @public */
-export class Instance extends WebAssembly.Instance {
-  constructor (options: AsyncifyOptions, module: WebAssembly.Module, importObject?: WebAssembly.Imports) {
-    importObject = importObject ?? {}
-    const asyncify = new Asyncify()
-    super(module, asyncify.wrapImports(importObject))
-    asyncify.init(importObject, this, options)
-  }
+// /** @public */
+// export class Instance extends WebAssembly.Instance {
+//   constructor (options: AsyncifyOptions, module: WebAssembly.Module, importObject?: WebAssembly.Imports) {
+//     importObject = importObject ?? {}
+//     const asyncify = new Asyncify()
+//     super(module, asyncify.wrapImports(importObject))
+//     asyncify.init(importObject, this, options)
+//   }
 
-  get exports (): WebAssembly.Exports {
-    return wrappedExports.get(super.exports)!
-  }
-}
-Object.defineProperty(Instance.prototype, 'exports', { enumerable: true })
+//   get exports (): WebAssembly.Exports {
+//     return wrappedExports.get(super.exports)!
+//   }
+// }
+// Object.defineProperty(Instance.prototype, 'exports', { enumerable: true })
