@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>test</title>
+  <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
+</head>
+<body>
+  <div id="mocha"></div>
+  <script>
+    class AssertionError extends Error {
+      constructor (options) {
+        super(options.message)
+        this.name = 'AssertionError'
+        this.actual = options.actual
+        this.expected = options.expected
+      }
+    }
+    function assert (cond, message) {
+      if (!cond) {
+        throw new AssertionError({
+          message: message
+        })
+      }
+    }
+    function assertThrow (f, E, errmsg) {
+      try {
+        f()
+      } catch (err) {
+        if (E && !(err instanceof E)) {
+          throw new AssertionError({
+            message: 'Error constructor is not matched'
+          })
+        }
+        if (!errmsg.test(err.message)) {
+          throw new AssertionError({
+            message: 'Error message is not matched'
+          })
+        }
+        return
+      }
+      throw new AssertionError({
+        message: 'should throw'
+      })
+    }
+  </script>
+  <script src="../node_modules/memfs-browser/dist/memfs.min.js"></script>
+  <script src="../dist/wasm-util.js"></script>
+  <script src="https://unpkg.com/mocha/mocha.js"></script>
+
+  <script class="mocha-init">
+    mocha.setup('bdd');
+    mocha.checkLeaks();
+  </script>
+
+  <script src="./abort/index.js"></script>
+  <script src="./assert/index.js"></script>
+  <script src="./clock/index.js"></script>
+  <script src="./exit/index.js"></script>
+  <script src="./directory/index.js"></script>
+  <script class="mocha-exec">
+    mocha.run();
+  </script>
+</body>
+</html>

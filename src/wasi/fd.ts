@@ -92,9 +92,15 @@ export class StandardOutput extends FileDescriptor {
   }
 
   write (buffer: Uint8Array): number {
+    const originalBuffer = buffer
     if (this._buf) {
       buffer = concatBuffer([this._buf, buffer])
       this._buf = null
+    }
+
+    if (buffer.indexOf(10) === -1) {
+      this._buf = buffer
+      return originalBuffer.byteLength
     }
 
     const written = this._log(buffer)
@@ -103,7 +109,7 @@ export class StandardOutput extends FileDescriptor {
       this._buf = buffer.slice(written)
     }
 
-    return written
+    return originalBuffer.byteLength
   }
 }
 

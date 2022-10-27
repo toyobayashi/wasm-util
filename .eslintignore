@@ -3,3 +3,4 @@ node_modules
 /lib
 .eslintrc.js
 /miniprogram_dist
+/test

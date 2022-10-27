@@ -44,3 +44,9 @@ endif()
 
 add_custom_command(TARGET ${TARGET_ASYNCIFY_EXE} POST_BUILD
   COMMAND ${WASM_OPT} ${ASYNCIFY_FLAGS} "$<TARGET_FILE:${TARGET_ASYNCIFY_EXE}>" "-o" "$<TARGET_FILE:${TARGET_ASYNCIFY_EXE}>")
+
+add_subdirectory("abort")
+add_subdirectory("assert")
+add_subdirectory("clock")
+add_subdirectory("exit")
+add_subdirectory("directory")
