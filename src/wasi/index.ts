@@ -52,6 +52,9 @@ export interface WASIOptions {
    */
   stderr?: number | undefined
 
+  stdoutWrite?: (buffer: Uint8Array) => number
+  stderrWrite?: (buffer: Uint8Array) => number
+
   filesystem?: false | { type: 'memfs'; fs: IFs }
 }
 
@@ -102,7 +105,15 @@ export class WASI {
 
     const filesystem = options.filesystem ?? false
 
-    const wrap = new _WASI(args, env, preopens, stdio, filesystem)
+    const wrap = new _WASI(
+      args,
+      env,
+      preopens,
+      stdio,
+      filesystem,
+      options.stdoutWrite,
+      options.stderrWrite
+    )
 
     for (const prop in wrap) {
       (wrap as any)[prop] = (wrap as any)[prop].bind(wrap)

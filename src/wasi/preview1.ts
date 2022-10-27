@@ -162,14 +162,24 @@ function readStdin (): Uint8Array {
 }
 
 export class WASI {
-  constructor (args: string[], env: string[], preopens: Preopen[], stdio: readonly [number, number, number], filesystem: false | { type: 'memfs'; fs: IFs }) {
+  constructor (
+    args: string[],
+    env: string[],
+    preopens: Preopen[],
+    stdio: readonly [number, number, number],
+    filesystem: false | { type: 'memfs'; fs: IFs },
+    stdoutWrite?: (buffer: Uint8Array) => number,
+    stderrWrite?: (buffer: Uint8Array) => number
+  ) {
     const fs = filesystem ? filesystem.fs : undefined
     const fds = new FileDescriptorTable({
       size: 3,
       in: stdio[0],
       out: stdio[1],
       err: stdio[2],
-      fs
+      fs,
+      stdoutWrite,
+      stderrWrite
     })
     _wasi.set(this, {
       fds,

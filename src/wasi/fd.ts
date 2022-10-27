@@ -1,6 +1,7 @@
 import type { Volume, IFs } from 'memfs-browser'
 import {
   WasiErrno,
+  FileControlFlag,
   WasiFileType,
   WasiWhence
 } from './types'
@@ -56,11 +57,26 @@ export class FileDescriptor {
   }
 }
 
+function createDefaultWrite (log: (str: string) => void): (buffer: Uint8Array) => number {
+  return function (buffer) {
+    let written = 0
+    let lastBegin = 0
+    let index
+    while ((index = buffer.indexOf(10, written)) !== -1) {
+      const str = new TextDecoder().decode(buffer.subarray(lastBegin, index))
+      log(str)
+      written += index - lastBegin + 1
+      lastBegin = index + 1
+    }
+    return written
+  }
+}
+
 export class StandardOutput extends FileDescriptor {
-  private readonly _print: (str: string) => void
+  private readonly _log: (buffer: Uint8Array) => number
   private _buf: Uint8Array | null
   constructor (
-    print: (str: string) => void,
+    log: (buffer: Uint8Array) => number,
     id: number,
     fd: number,
     path: string,
@@ -71,7 +87,7 @@ export class StandardOutput extends FileDescriptor {
     preopen: number
   ) {
     super(id, fd, path, realPath, type, rightsBase, rightsInheriting, preopen)
-    this._print = print
+    this._log = log
     this._buf = null
   }
 
@@ -80,15 +96,8 @@ export class StandardOutput extends FileDescriptor {
       buffer = concatBuffer([this._buf, buffer])
       this._buf = null
     }
-    let written = 0
-    let lastBegin = 0
-    let index
-    while ((index = buffer.indexOf(10, written)) !== -1) {
-      const str = new TextDecoder().decode(buffer.subarray(lastBegin, index))
-      this._print(str)
-      written += index - lastBegin + 1
-      lastBegin = index + 1
-    }
+
+    const written = this._log(buffer)
 
     if (written < buffer.length) {
       this._buf = buffer.slice(written)
@@ -125,6 +134,8 @@ export interface FileDescriptorTableOptions {
   out: number
   err: number
   fs?: IFs
+  stdoutWrite?: (buffer: Uint8Array) => number
+  stderrWrite?: (buffer: Uint8Array) => number
 }
 
 export class FileDescriptorTable {
@@ -132,6 +143,8 @@ export class FileDescriptorTable {
   public size: number
   public fds: FileDescriptor[]
   public stdio: [number, number, number]
+  public stdoutWrite?: (buffer: Uint8Array) => number
+  public stderrWrite?: (buffer: Uint8Array) => number
   private readonly fs: IFs | undefined
   constructor (options: FileDescriptorTableOptions) {
     this.used = 0
@@ -139,6 +152,8 @@ export class FileDescriptorTable {
     this.fds = Array(options.size)
     this.stdio = [options.in, options.out, options.err]
     this.fs = options.fs
+    this.stdoutWrite = options.stdoutWrite
+    this.stderrWrite = options.stderrWrite
 
     this.insertStdio(options.in, 0, '<stdin>')
     this.insertStdio(options.out, 1, '<stdout>')
@@ -151,7 +166,7 @@ export class FileDescriptorTable {
     name: string
   ): FileDescriptor {
     const type = WasiFileType.CHARACTER_DEVICE
-    const { base, inheriting } = getRights(this.stdio, fd, 2, type)
+    const { base, inheriting } = getRights(this.stdio, fd, FileControlFlag.O_RDWR, type)
     const wrap = this.insert(fd, name, name, type, base, inheriting, 0)
     if (wrap.id !== expected) {
       throw new WasiError(`id: ${wrap.id} !== expected: ${expected}`, WasiErrno.EBADF)
@@ -186,7 +201,7 @@ export class FileDescriptorTable {
     let entry: FileDescriptor
     if (mappedPath === '<stdout>') {
       entry = new StandardOutput(
-        console.log,
+        this.stdoutWrite ?? createDefaultWrite(console.log),
         index,
         fd,
         mappedPath,
@@ -198,7 +213,7 @@ export class FileDescriptorTable {
       )
     } else if (mappedPath === '<stderr>') {
       entry = new StandardOutput(
-        console.error,
+        this.stderrWrite ?? createDefaultWrite(console.error),
         index,
         fd,
         mappedPath,
