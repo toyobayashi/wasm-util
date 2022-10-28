@@ -5,7 +5,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>test</title>
-  <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
+  <link rel="stylesheet" href="../node_modules/mocha/mocha.css" />
 </head>
 <body>
   <div id="mocha"></div>
@@ -48,7 +48,7 @@
   </script>
   <script src="../node_modules/memfs-browser/dist/memfs.js"></script>
   <script src="../dist/wasm-util.js"></script>
-  <script src="https://unpkg.com/mocha/mocha.js"></script>
+  <script src="../node_modules/mocha/mocha.js"></script>
 
   <script class="mocha-init">
     mocha.setup({
@@ -58,6 +58,7 @@
     mocha.checkLeaks();
   </script>
 
+  <script src="./memory/index.js"></script>
   <script src="./abort/index.js"></script>
   <script src="./assert/index.js"></script>
   <script src="./clock/index.js"></script>

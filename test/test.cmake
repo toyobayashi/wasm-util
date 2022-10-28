@@ -5,7 +5,7 @@ function(test TARGET SRCLIST LINKOPTIONS)
 
   target_link_options(${TARGET} PRIVATE
     # "-v"
-    "-Wl,--initial-memory=16777216,--export-dynamic,--import-undefined"
+    "-Wl,--export-dynamic,--import-undefined"
     ${LINKOPTIONS}
   )
 

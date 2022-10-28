@@ -23,6 +23,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   )
 endif()
 
+add_subdirectory("memory")
 add_subdirectory("abort")
 add_subdirectory("assert")
 add_subdirectory("clock")
