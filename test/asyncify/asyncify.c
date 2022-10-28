@@ -5,8 +5,6 @@
 void async_sleep(int ms);
 
 int main() {
-  printf("before\n");
-  async_sleep(2000);
-  printf("after\n");
+  async_sleep(200);
   return 0;
 }

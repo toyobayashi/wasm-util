@@ -8,7 +8,7 @@ const ignoreNames = [
   'asyncify_stop_unwind'
 ]
 
-const wrappedExports = new WeakMap<WebAssembly.Exports, WebAssembly.Exports>()
+// const wrappedExports = new WeakMap<WebAssembly.Exports, WebAssembly.Exports>()
 
 const enum AsyncifyState {
   NONE,
@@ -98,7 +98,7 @@ export class Asyncify {
     imports: WebAssembly.Imports,
     instance: { readonly exports: T },
     options: AsyncifyOptions
-  ): AsyncifyExports<T, U> {
+  ): { readonly exports: AsyncifyExports<T, U> } {
     if (this.exports) return this.exports as any
     const exports = instance.exports
     const memory = exports.memory || (imports.env?.memory)
@@ -134,8 +134,10 @@ export class Asyncify {
       new Int32Array(memory.buffer, this.dataPtr).set([address.start, address.end])
     }
     this.exports = this.wrapExports(exports, options.wrapExports as any) as any
+    const asyncifiedInstance = Object.create(WebAssembly.Instance.prototype)
+    Object.defineProperty(asyncifiedInstance, 'exports', { value: this.exports })
     // Object.setPrototypeOf(instance, Instance.prototype)
-    return this.exports as any
+    return asyncifiedInstance
   }
 
   private assertState (): void {
@@ -211,7 +213,7 @@ export class Asyncify {
       })
     })
 
-    wrappedExports.set(exports, newExports)
+    // wrappedExports.set(exports, newExports)
     return newExports
   }
 }
