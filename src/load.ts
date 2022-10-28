@@ -30,7 +30,8 @@ export async function load (
   if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
     source = await WebAssembly.instantiate(urlOrBuffer, imports)
     if (asyncify) {
-      return { module: source.module, instance: asyncifyHelper!.init(imports, source.instance, asyncify) }
+      const memory: any = source.instance.exports.memory || imports.env?.memory
+      return { module: source.module, instance: asyncifyHelper!.init(memory, source.instance, asyncify) }
     }
     return source
   }
@@ -49,7 +50,8 @@ export async function load (
     source = await fetchWasm(urlOrBuffer, imports)
   }
   if (asyncify) {
-    return { module: source.module, instance: asyncifyHelper!.init(imports, source.instance, asyncify) }
+    const memory: any = source.instance.exports.memory || imports.env?.memory
+    return { module: source.module, instance: asyncifyHelper!.init(memory, source.instance, asyncify) }
   }
   return source
 }
@@ -80,7 +82,8 @@ export function loadSync (
   const instance = new WebAssembly.Instance(module, imports)
   const source = { instance, module }
   if (asyncify) {
-    return { module: source.module, instance: asyncifyHelper!.init(imports, instance, asyncify) }
+    const memory: any = source.instance.exports.memory || imports.env?.memory
+    return { module: source.module, instance: asyncifyHelper!.init(memory, instance, asyncify) }
   }
   return source
 }

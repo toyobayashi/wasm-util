@@ -20,7 +20,7 @@ describe('asyncify', function () {
     }
     const bytes = await (await fetch('/test/asyncify/asyncify.wasm')).arrayBuffer()
     const { instance } = await WebAssembly.instantiate(bytes, imports)
-    const asyncifedInstance = asyncify.init(imports, instance, {
+    const asyncifedInstance = asyncify.init(instance.exports.memory, instance, {
       wrapExports: ['_start']
     })
 

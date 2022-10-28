@@ -95,16 +95,17 @@ export class Asyncify {
   private dataPtr: number = 0
 
   public init<T extends WebAssembly.Exports, U extends Array<Exclude<keyof T, AsyncifyExportName>>> (
-    imports: WebAssembly.Imports,
+    memory: WebAssembly.Memory,
     instance: { readonly exports: T },
     options: AsyncifyOptions
   ): { readonly exports: AsyncifyExports<T, U> } {
-    if (this.exports) return this.exports as any
-    const exports = instance.exports
-    const memory = exports.memory || (imports.env?.memory)
+    if (this.exports) {
+      throw new Error('Asyncify has been initialized')
+    }
     if (!(memory instanceof WebAssembly.Memory)) {
       throw new TypeError('Require WebAssembly.Memory object')
     }
+    const exports = instance.exports
     for (let i = 0; i < ignoreNames.length; ++i) {
       if (typeof exports[ignoreNames[i]] !== 'function') {
         throw new TypeError('Invalid asyncify wasm')
