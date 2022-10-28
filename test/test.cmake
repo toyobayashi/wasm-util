@@ -4,7 +4,7 @@ function(test TARGET SRCLIST LINKOPTIONS)
   set_target_properties(${TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
   target_link_options(${TARGET} PRIVATE
-    "-v"
+    # "-v"
     "-Wl,--initial-memory=16777216,--export-dynamic,--import-undefined"
     ${LINKOPTIONS}
   )

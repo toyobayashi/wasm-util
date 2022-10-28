@@ -51,7 +51,10 @@
   <script src="https://unpkg.com/mocha/mocha.js"></script>
 
   <script class="mocha-init">
-    mocha.setup('bdd');
+    mocha.setup({
+      ui: 'bdd',
+      timeout: Infinity
+    });
     mocha.checkLeaks();
   </script>
 
@@ -61,6 +64,10 @@
   <script src="./exit/index.js"></script>
   <script src="./directory/index.js"></script>
   <script src="./ftruncate/index.js"></script>
+  <script src="./getentropy/index.js"></script>
+  <script src="./getenv/index.js"></script>
+  <script src="./stdout/index.js"></script>
+  <script src="./stdin/index.js"></script>
   <script class="mocha-exec">
     mocha.run();
   </script>
