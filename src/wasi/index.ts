@@ -9,7 +9,7 @@ import {
   validateBoolean,
   validateFunction,
   validateUndefined,
-  validateInt32
+  validateString
 } from './util'
 
 const kEmptyObject = Object.freeze(Object.create(null))
@@ -37,25 +37,25 @@ export interface WASIOptions {
    */
   returnOnExit?: boolean | undefined
 
-  /**
-   * @defaultValue `0`
-   */
-  stdin?: number | undefined
+  // /**
+  //  * @defaultValue `0`
+  //  */
+  // stdin?: number | undefined
 
-  /**
-   * @defaultValue `1`
-   */
-  stdout?: number | undefined
+  // /**
+  //  * @defaultValue `1`
+  //  */
+  // stdout?: number | undefined
 
-  /**
-   * @defaultValue `2`
-   */
-  stderr?: number | undefined
+  // /**
+  //  * @defaultValue `2`
+  //  */
+  // stderr?: number | undefined
 
-  stdoutWrite?: (buffer: Uint8Array) => number
-  stderrWrite?: (buffer: Uint8Array) => number
+  print?: (str: string) => void
+  printErr?: (str: string) => void
 
-  filesystem?: false | { type: 'memfs'; fs: IFs }
+  filesystem?: { type: 'memfs'; fs: IFs }
 }
 
 // /** @public */
@@ -97,22 +97,43 @@ export class WASI {
       )
     }
 
-    const { stdin = 0, stdout = 1, stderr = 2 } = options
-    validateInt32(stdin, 'options.stdin', 0)
-    validateInt32(stdout, 'options.stdout', 0)
-    validateInt32(stderr, 'options.stderr', 0)
-    const stdio = [stdin, stdout, stderr] as const
+    if (preopens.length > 0) {
+      if (options.filesystem === undefined) {
+        throw new Error('filesystem is disabled, can not preopen directory')
+      }
+    }
 
-    const filesystem = options.filesystem ?? false
+    if (options.filesystem !== undefined) {
+      validateObject(options.filesystem, 'options.filesystem')
+      validateString(options.filesystem.type, 'options.filesystem.type')
+      if (options.filesystem.type !== 'memfs') {
+        throw new Error(`Filesystem type ${options.filesystem.type as string} is not supported, only "memfs" is supported currently`)
+      }
+      try {
+        validateObject(options.filesystem.fs, 'options.filesystem.fs')
+      } catch (_) {
+        throw new Error('Node.js fs like implementation is not provided')
+      }
+    }
+
+    if (options.print !== undefined) validateFunction(options.print, 'options.print')
+    if (options.printErr !== undefined) validateFunction(options.printErr, 'options.printErr')
+
+    // const { stdin = 0, stdout = 1, stderr = 2 } = options
+    // validateInt32(stdin, 'options.stdin', 0)
+    // validateInt32(stdout, 'options.stdout', 0)
+    // validateInt32(stderr, 'options.stderr', 0)
+    // const stdio = [stdin, stdout, stderr] as const
+    const stdio = [0, 1, 2] as const
 
     const wrap = new _WASI(
       args,
       env,
       preopens,
       stdio,
-      filesystem,
-      options.stdoutWrite,
-      options.stderrWrite
+      options.filesystem,
+      options.print,
+      options.printErr
     )
 
     for (const prop in wrap) {

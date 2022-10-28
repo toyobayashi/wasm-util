@@ -58,7 +58,6 @@ interface WrappedData {
   fds: FileDescriptorTable
   args: string[]
   env: string[]
-  fs?: IFs
 }
 
 interface Dirent {
@@ -79,9 +78,16 @@ export interface Preopen {
 
 const _memory = new WeakMap<WASI, Memory>()
 const _wasi = new WeakMap<WASI, WrappedData>()
+const _fs = new WeakMap<WASI, IFs>()
 
 function getMemory (wasi: WASI): Memory {
   return _memory.get(wasi)!
+}
+
+function getFs (wasi: WASI): IFs {
+  const fs = _fs.get(wasi)
+  if (!fs) throw new Error('filesystem is unavailable')
+  return fs
 }
 
 function handleError (err: Error & { code?: string }): WasiErrno {
@@ -137,11 +143,11 @@ function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | Promi
   }) as unknown as T
 }
 
-function resolvePath (wasi: WrappedData, fileDescriptor: FileDescriptor, path: string, flags: number): string {
+function resolvePath (fs: IFs, fileDescriptor: FileDescriptor, path: string, flags: number): string {
   let resolvedPath = resolve(fileDescriptor.realPath, path)
   if ((flags & 1) === 1) {
     try {
-      resolvedPath = wasi.fs!.readlinkSync(resolvedPath) as string
+      resolvedPath = fs.readlinkSync(resolvedPath) as string
     } catch (err: any) {
       if (err.code !== 'EINVAL' && err.code !== 'ENOENT') {
         throw err
@@ -167,9 +173,9 @@ export class WASI {
     env: string[],
     preopens: Preopen[],
     stdio: readonly [number, number, number],
-    filesystem: false | { type: 'memfs'; fs: IFs },
-    stdoutWrite?: (buffer: Uint8Array) => number,
-    stderrWrite?: (buffer: Uint8Array) => number
+    filesystem?: { type: 'memfs'; fs: IFs },
+    print?: (str: string) => void,
+    printErr?: (str: string) => void
   ) {
     const fs = filesystem ? filesystem.fs : undefined
     const fds = new FileDescriptorTable({
@@ -178,22 +184,20 @@ export class WASI {
       out: stdio[1],
       err: stdio[2],
       fs,
-      stdoutWrite,
-      stderrWrite
+      print,
+      printErr
     })
     _wasi.set(this, {
       fds,
       args,
-      env,
-      fs
+      env
     })
+    if (fs) _fs.set(this, fs)
 
     if (preopens.length > 0) {
-      if (!filesystem) throw new Error('filesystem is disabled, can not preopen directory')
-      if (!fs) throw new Error('Node.js fs like implementation is not provided, can not preopen directory')
       for (let i = 0; i < preopens.length; ++i) {
-        const realPath = fs.realpathSync(preopens[i].realPath, 'utf8') as string
-        const fd = fs.openSync(realPath, 'r', 0o666)
+        const realPath = fs!.realpathSync(preopens[i].realPath, 'utf8') as string
+        const fd = fs!.openSync(realPath, 'r', 0o666)
         fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
       }
     }
@@ -331,10 +335,11 @@ export class WASI {
 
   fd_allocate = syscallWrap('fd_allocate', function (fd: fd, offset: filesize, len: filesize): WasiErrno {
     const wasi = _wasi.get(this)!
+    const fs = getFs(this)
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_ALLOCATE, BigInt(0))
-    const stat = wasi.fs!.fstatSync(fileDescriptor.fd, { bigint: true })
+    const stat = fs.fstatSync(fileDescriptor.fd, { bigint: true })
     if (stat.size < offset + len) {
-      wasi.fs!.truncateSync(fileDescriptor.fd, Number(offset + len))
+      fs.truncateSync(fileDescriptor.fd, Number(offset + len))
     }
     return WasiErrno.ESUCCESS
   })
@@ -342,7 +347,8 @@ export class WASI {
   fd_close = syscallWrap('fd_close', function (fd: fd): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
-    wasi.fs!.closeSync(fileDescriptor.fd)
+    const fs = getFs(this)
+    fs.closeSync(fileDescriptor.fd)
     wasi.fds.remove(fd)
     return WasiErrno.ESUCCESS
   })
@@ -350,7 +356,8 @@ export class WASI {
   fd_datasync = syscallWrap('fd_datasync', function (fd: fd): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_DATASYNC, BigInt(0))
-    wasi.fs!.fdatasyncSync(fileDescriptor.fd)
+    const fs = getFs(this)
+    fs.fdatasyncSync(fileDescriptor.fd)
     return WasiErrno.ESUCCESS
   })
 
@@ -395,7 +402,8 @@ export class WASI {
     if (buf === 0) return WasiErrno.EINVAL
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_GET, BigInt(0))
-    const stat = wasi.fs!.fstatSync(fileDescriptor.fd, { bigint: true })
+    const fs = getFs(this)
+    const stat = fs.fstatSync(fileDescriptor.fd, { bigint: true })
     const { view } = getMemory(this)
     toFileStat(view, buf, stat)
     return WasiErrno.ESUCCESS
@@ -404,7 +412,8 @@ export class WASI {
   fd_filestat_set_size = syscallWrap('fd_filestat_set_size', function (fd: fd, size: filesize): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_SET_SIZE, BigInt(0))
-    wasi.fs!.ftruncateSync(fileDescriptor.fd, Number(size))
+    const fs = getFs(this)
+    fs.ftruncateSync(fileDescriptor.fd, Number(size))
     return WasiErrno.ESUCCESS
   })
 
@@ -418,7 +427,8 @@ export class WASI {
     if ((flags & WasiFstFlag.SET_MTIM_NOW) === WasiFstFlag.SET_MTIM_NOW) {
       mtim = BigInt(Date.now() * 1000000)
     }
-    wasi.fs!.futimesSync(fileDescriptor.fd, Number(atim), Number(mtim))
+    const fs = getFs(this)
+    fs.futimesSync(fileDescriptor.fd, Number(atim), Number(mtim))
     return WasiErrno.ESUCCESS
   })
 
@@ -446,7 +456,8 @@ export class WASI {
 
     const buffer = new Uint8Array(totalSize)
     ;(buffer as any)._isBuffer = true
-    const bytesRead = wasi.fs!.readSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(offset))
+    const fs = getFs(this)
+    const bytesRead = fs.readSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(offset))
     nread = buffer ? copyMemory(ioVecs, buffer.subarray(0, bytesRead)) : 0
 
     view.setUint32(size, nread, true)
@@ -510,8 +521,8 @@ export class WASI {
       const bufLen = view.getUint32(offset + 4, true)
       return HEAPU8.subarray(buf, buf + bufLen)
     }))
-
-    const nwritten = wasi.fs!.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(offset))
+    const fs = getFs(this)
+    const nwritten = fs.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(offset))
 
     view.setUint32(size, nwritten, true)
     return WasiErrno.ESUCCESS
@@ -545,7 +556,8 @@ export class WASI {
     } else {
       buffer = new Uint8Array(totalSize)
       ;(buffer as any)._isBuffer = true
-      const bytesRead = wasi.fs!.readSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
+      const fs = getFs(this)
+      const bytesRead = fs.readSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
       nread = buffer ? copyMemory(ioVecs, buffer.subarray(0, bytesRead)) : 0
       fileDescriptor.pos += BigInt(nread)
     }
@@ -576,13 +588,14 @@ export class WASI {
     if (buf === 0 || bufused === 0) return WasiErrno.ESUCCESS
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READDIR, BigInt(0))
-    const entries = wasi.fs!.readdirSync(fileDescriptor.realPath, { withFileTypes: true }) as Dirent[]
+    const fs = getFs(this)
+    const entries = fs.readdirSync(fileDescriptor.realPath, { withFileTypes: true }) as Dirent[]
     const { HEAPU8, view } = getMemory(this)
     let bufferUsed = 0
     for (let i = Number(cookie); i < entries.length; i++) {
       const nameData = encoder.encode(entries[i].name)
 
-      const entryInfo = wasi.fs!.statSync(
+      const entryInfo = fs.statSync(
         resolve(fileDescriptor.realPath, entries[i].name),
         { bigint: true }
       )
@@ -638,7 +651,8 @@ export class WASI {
   fd_sync = syscallWrap('fd_sync', function (fd: fd): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SYNC, BigInt(0))
-    wasi.fs!.fsyncSync(fileDescriptor.fd)
+    const fs = getFs(this)
+    fs.fsyncSync(fileDescriptor.fd)
     return WasiErrno.ESUCCESS
   })
 
@@ -672,7 +686,8 @@ export class WASI {
     if (fd === 1 || fd === 2) {
       nwritten = (fileDescriptor as StandardOutput).write(buffer)
     } else {
-      nwritten = wasi.fs!.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
+      const fs = getFs(this)
+      nwritten = fs.writeSync(fileDescriptor.fd, buffer, 0, buffer.length, Number(fileDescriptor.pos))
       fileDescriptor.pos += BigInt(nwritten)
     }
 
@@ -693,7 +708,8 @@ export class WASI {
     let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
     pathString = resolve(fileDescriptor.realPath, pathString)
-    wasi.fs!.mkdirSync(pathString)
+    const fs = getFs(this)
+    fs.mkdirSync(pathString)
     return WasiErrno.ESUCCESS
   })
 
@@ -710,13 +726,13 @@ export class WASI {
     const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
     let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
+    const fs = getFs(this)
     pathString = resolve(fileDescriptor.realPath, pathString)
-
     let stat
     if ((flags & 1) === 1) {
-      stat = wasi.fs!.statSync(pathString, { bigint: true })
+      stat = fs.statSync(pathString, { bigint: true })
     } else {
-      stat = wasi.fs!.lstatSync(pathString, { bigint: true })
+      stat = fs.lstatSync(pathString, { bigint: true })
     }
 
     toFileStat(view, filestat, stat)
@@ -736,7 +752,8 @@ export class WASI {
     const { HEAPU8 } = getMemory(this)
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
-    const resolvedPath = resolvePath(wasi, fileDescriptor, decoder.decode(HEAPU8.subarray(path, path + path_len)), flags)
+    const fs = getFs(this)
+    const resolvedPath = resolvePath(fs, fileDescriptor, decoder.decode(HEAPU8.subarray(path, path + path_len)), flags)
     if ((fst_flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
       atim = BigInt(Date.now() * 1000000)
     }
@@ -744,7 +761,7 @@ export class WASI {
     if ((fst_flags & WasiFstFlag.SET_MTIM_NOW) === WasiFstFlag.SET_MTIM_NOW) {
       mtim = BigInt(Date.now() * 1000000)
     }
-    wasi.fs!.utimesSync(resolvedPath, Number(atim), Number(mtim))
+    fs.utimesSync(resolvedPath, Number(atim), Number(mtim))
     return WasiErrno.ESUCCESS
   })
 
@@ -766,10 +783,11 @@ export class WASI {
       newWrap = wasi.fds.get(new_fd, WasiRights.PATH_LINK_TARGET, BigInt(0))
     }
     const { HEAPU8 } = getMemory(this)
-    const resolvedOldPath = resolvePath(wasi, oldWrap, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)), old_flags)
+    const fs = getFs(this)
+    const resolvedOldPath = resolvePath(fs, oldWrap, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)), old_flags)
     const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
 
-    wasi.fs!.linkSync(resolvedOldPath, resolvedNewPath)
+    fs.linkSync(resolvedOldPath, resolvedNewPath)
 
     return WasiErrno.ESUCCESS
   })
@@ -844,15 +862,16 @@ export class WASI {
     const memory = getMemory(this)
     const HEAPU8 = memory.HEAPU8
     const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
-    const resolved_path = resolvePath(wasi, fileDescriptor, pathString, dirflags)
-    const r = wasi.fs!.openSync(resolved_path, flags, 0o666)
+    const fs = getFs(this)
+    const resolved_path = resolvePath(fs, fileDescriptor, pathString, dirflags)
+    const r = fs.openSync(resolved_path, flags, 0o666)
     const filetype = wasi.fds.getFileTypeByFd(r)
     if ((o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0 && filetype !== WasiFileType.DIRECTORY) {
       return WasiErrno.ENOTDIR
     }
     const { base: max_base, inheriting: max_inheriting } = getRights(wasi.fds.stdio, r, flags, filetype)
     const wrap = wasi.fds.insert(r, resolved_path, resolved_path, filetype, fs_rights_base & max_base, fs_rights_inheriting & max_inheriting, 0)
-    const stat = wasi.fs!.fstatSync(r, { bigint: true })
+    const stat = fs.fstatSync(r, { bigint: true })
     if (stat.isFile()) {
       wrap.size = stat.size
       if ((flags & FileControlFlag.O_APPEND) !== 0) {
@@ -881,8 +900,8 @@ export class WASI {
     let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
     pathString = resolve(fileDescriptor.realPath, pathString)
-
-    const link = wasi.fs!.readlinkSync(pathString) as string
+    const fs = getFs(this)
+    const link = fs.readlinkSync(pathString) as string
     const linkData = encoder.encode(link)
     const len = Math.min(linkData.length, buf_len)
     if (len >= buf_len) return WasiErrno.ENOBUFS
@@ -906,8 +925,8 @@ export class WASI {
     let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
     pathString = resolve(fileDescriptor.realPath, pathString)
-
-    wasi.fs!.rmdirSync(pathString)
+    const fs = getFs(this)
+    fs.rmdirSync(pathString)
 
     return WasiErrno.ESUCCESS
   })
@@ -932,8 +951,8 @@ export class WASI {
     const { HEAPU8 } = getMemory(this)
     const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)))
     const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
-
-    wasi.fs!.renameSync(resolvedOldPath, resolvedNewPath)
+    const fs = getFs(this)
+    fs.renameSync(resolvedOldPath, resolvedNewPath)
 
     return WasiErrno.ESUCCESS
   })
@@ -954,8 +973,8 @@ export class WASI {
     let newPath = decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len))
 
     newPath = resolve(fileDescriptor.realPath, newPath)
-
-    wasi.fs!.symlinkSync(oldPath, newPath)
+    const fs = getFs(this)
+    fs.symlinkSync(oldPath, newPath)
 
     return WasiErrno.ESUCCESS
   })
@@ -973,8 +992,8 @@ export class WASI {
     let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
 
     pathString = resolve(fileDescriptor.realPath, pathString)
-
-    wasi.fs!.unlinkSync(pathString)
+    const fs = getFs(this)
+    fs.unlinkSync(pathString)
 
     return WasiErrno.ESUCCESS
   })

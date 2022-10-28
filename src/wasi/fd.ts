@@ -57,26 +57,11 @@ export class FileDescriptor {
   }
 }
 
-function createDefaultWrite (log: (str: string) => void): (buffer: Uint8Array) => number {
-  return function (buffer) {
-    let written = 0
-    let lastBegin = 0
-    let index
-    while ((index = buffer.indexOf(10, written)) !== -1) {
-      const str = new TextDecoder().decode(buffer.subarray(lastBegin, index))
-      log(str)
-      written += index - lastBegin + 1
-      lastBegin = index + 1
-    }
-    return written
-  }
-}
-
 export class StandardOutput extends FileDescriptor {
-  private readonly _log: (buffer: Uint8Array) => number
+  private readonly _log: (str: string) => void
   private _buf: Uint8Array | null
   constructor (
-    log: (buffer: Uint8Array) => number,
+    log: (str: string) => void,
     id: number,
     fd: number,
     path: string,
@@ -103,7 +88,15 @@ export class StandardOutput extends FileDescriptor {
       return originalBuffer.byteLength
     }
 
-    const written = this._log(buffer)
+    let written = 0
+    let lastBegin = 0
+    let index
+    while ((index = buffer.indexOf(10, written)) !== -1) {
+      const str = new TextDecoder().decode(buffer.subarray(lastBegin, index))
+      this._log(str)
+      written += index - lastBegin + 1
+      lastBegin = index + 1
+    }
 
     if (written < buffer.length) {
       this._buf = buffer.slice(written)
@@ -140,8 +133,8 @@ export interface FileDescriptorTableOptions {
   out: number
   err: number
   fs?: IFs
-  stdoutWrite?: (buffer: Uint8Array) => number
-  stderrWrite?: (buffer: Uint8Array) => number
+  print?: (str: string) => void
+  printErr?: (str: string) => void
 }
 
 export class FileDescriptorTable {
@@ -149,8 +142,8 @@ export class FileDescriptorTable {
   public size: number
   public fds: FileDescriptor[]
   public stdio: [number, number, number]
-  public stdoutWrite?: (buffer: Uint8Array) => number
-  public stderrWrite?: (buffer: Uint8Array) => number
+  public print?: (str: string) => void
+  public printErr?: (str: string) => void
   private readonly fs: IFs | undefined
   constructor (options: FileDescriptorTableOptions) {
     this.used = 0
@@ -158,8 +151,8 @@ export class FileDescriptorTable {
     this.fds = Array(options.size)
     this.stdio = [options.in, options.out, options.err]
     this.fs = options.fs
-    this.stdoutWrite = options.stdoutWrite
-    this.stderrWrite = options.stderrWrite
+    this.print = options.print
+    this.printErr = options.printErr
 
     this.insertStdio(options.in, 0, '<stdin>')
     this.insertStdio(options.out, 1, '<stdout>')
@@ -207,7 +200,7 @@ export class FileDescriptorTable {
     let entry: FileDescriptor
     if (mappedPath === '<stdout>') {
       entry = new StandardOutput(
-        this.stdoutWrite ?? createDefaultWrite(console.log),
+        this.print ?? console.log,
         index,
         fd,
         mappedPath,
@@ -219,7 +212,7 @@ export class FileDescriptorTable {
       )
     } else if (mappedPath === '<stderr>') {
       entry = new StandardOutput(
-        this.stderrWrite ?? createDefaultWrite(console.error),
+        this.printErr ?? console.error,
         index,
         fd,
         mappedPath,
