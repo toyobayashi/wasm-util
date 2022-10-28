@@ -20,6 +20,9 @@
     "lint": "eslint ./src/**/*.{ts,js} --fix",
     "prepare": "npm run build"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "wasm",
     "webassembly",
