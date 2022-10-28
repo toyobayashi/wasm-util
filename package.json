@@ -1,7 +1,7 @@
 {
   "name": "@tybys/wasm-util",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "WASI polyfill for browser and some wasm util",
   "main": "./lib/cjs/index.js",
   "module": "./dist/wasm-util.esm-bundler.js",
   "types": "./dist/wasm-util.d.ts",
@@ -20,7 +20,16 @@
     "lint": "eslint ./src/**/*.{ts,js} --fix",
     "prepare": "npm run build"
   },
-  "keywords": [],
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "wasi",
+    "polyfill"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/toyobayashi/wasm-util.git"
+  },
   "author": "toyobayashi",
   "license": "MIT",
   "dependencies": {
