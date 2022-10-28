@@ -99,7 +99,7 @@ await p
 console.log(Date.now() - now >= 200)
 ```
 
-### WASI browser polyfill
+### WASI polyfill for browser
 
 The API is similar to the `require('wasi').WASI` in Node.js.
 
@@ -122,7 +122,12 @@ const wasi = new WASI({
   preopens: {
     '/': '/'
   },
-  filesystem: { type: 'memfs', fs }
+  filesystem: { type: 'memfs', fs },
+
+  // redirect stdout / stderr
+
+  // print (text) { console.log(text) },
+  // printErr (text) { console.error(text) }
 })
 
 const imports = {
