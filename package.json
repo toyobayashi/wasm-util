@@ -24,7 +24,7 @@
   "author": "toyobayashi",
   "license": "MIT",
   "dependencies": {
-    "memfs-browser": "^3.4.10703"
+    "memfs-browser": "^3.4.10801"
   },
   "devDependencies": {
     "@tybys/ts-transform-module-specifier": "^0.0.2",
