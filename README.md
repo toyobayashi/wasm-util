@@ -8,6 +8,51 @@ WebAssembly related utils for browser environment
 
 All example code below need to be bundled by ES module bundlers like `webpack` / `rollup`, or specify import map in browser native ES module runtime.
 
+### WASI polyfill for browser
+
+The API is similar to the `require('wasi').WASI` in Node.js.
+
+You can use `memfs-browser` to provide filesystem capability.
+
+- Example: [https://github.com/toyobayashi/wasi-wabt](https://github.com/toyobayashi/wasi-wabt)
+- Demo: [https://toyobayashi.github.io/wasi-wabt/](https://toyobayashi.github.io/wasi-wabt/)
+
+```js
+import { load, WASI } from '@tybys/wasm-util'
+import { Volumn, createFsFromVolume } from 'memfs-browser'
+
+const fs = createFsFromVolume(Volume.from({
+  '/home/wasi': null
+}))
+
+const wasi = new WASI({
+  args: ['chrome', 'file.wasm'],
+  env: {
+    NODE_ENV: 'development',
+    WASI_SDK_PATH: '/opt/wasi-sdk'
+  },
+  preopens: {
+    '/': '/'
+  },
+  filesystem: { type: 'memfs', fs },
+
+  // redirect stdout / stderr
+
+  // print (text) { console.log(text) },
+  // printErr (text) { console.error(text) }
+})
+
+const imports = {
+  wasi_snapshot_preview1: wasi.wasiImport
+}
+
+const { module, instance } = await load('/path/to/file.wasm', imports)
+wasi.start(instance)
+// wasi.initialize(instance)
+```
+
+Implemented syscalls: [wasi_snapshot_preview1](#wasi_snapshot_preview1)
+
 ### `load` / `loadSync`
 
 `loadSync` has 4KB wasm size limit in browser.
@@ -99,49 +144,7 @@ await p
 console.log(Date.now() - now >= 200)
 ```
 
-### WASI polyfill for browser
-
-The API is similar to the `require('wasi').WASI` in Node.js.
-
-You can use `memfs-browser` to provide filesystem capability.
-
-```js
-import { load, WASI } from '@tybys/wasm-util'
-import { Volumn, createFsFromVolume } from 'memfs-browser'
-
-const fs = createFsFromVolume(Volume.from({
-  '/home/wasi': null
-}))
-
-const wasi = new WASI({
-  args: ['chrome', 'file.wasm'],
-  env: {
-    NODE_ENV: 'development',
-    WASI_SDK_PATH: '/opt/wasi-sdk'
-  },
-  preopens: {
-    '/': '/'
-  },
-  filesystem: { type: 'memfs', fs },
-
-  // redirect stdout / stderr
-
-  // print (text) { console.log(text) },
-  // printErr (text) { console.error(text) }
-})
-
-const imports = {
-  wasi_snapshot_preview1: wasi.wasiImport
-}
-
-const { module, instance } = await load('/path/to/file.wasm', imports)
-wasi.start(instance)
-// wasi.initialize(instance)
-```
-
-Implemented syscalls:
-
-#### wasi_snapshot_preview1
+### wasi_snapshot_preview1
 
 - [x] args_get
 - [x] args_sizes_get
