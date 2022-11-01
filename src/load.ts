@@ -1,10 +1,17 @@
+import { _WebAssembly } from './webassembly'
 import { Asyncify } from './asyncify'
 import type { AsyncifyOptions } from './asyncify'
 
+declare const wx: any
+declare const __wxConfig: any
+
 async function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Imports): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
+  if (typeof wx !== 'undefined' && typeof __wxConfig !== 'undefined') {
+    return await _WebAssembly.instantiate(urlOrBuffer as any, imports)
+  }
   const response = await fetch(urlOrBuffer)
   const buffer = await response.arrayBuffer()
-  const source = await WebAssembly.instantiate(buffer, imports)
+  const source = await _WebAssembly.instantiate(buffer, imports)
   return source
 }
 
@@ -28,7 +35,7 @@ export async function load (
   }
 
   if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
-    source = await WebAssembly.instantiate(urlOrBuffer, imports)
+    source = await _WebAssembly.instantiate(urlOrBuffer, imports)
     if (asyncify) {
       const memory: any = source.instance.exports.memory || imports.env?.memory
       return { module: source.module, instance: asyncifyHelper!.init(memory, source.instance, asyncify) }
@@ -40,9 +47,9 @@ export async function load (
     throw new TypeError('Invalid source')
   }
 
-  if (typeof WebAssembly.instantiateStreaming === 'function') {
+  if (typeof _WebAssembly.instantiateStreaming === 'function') {
     try {
-      source = await WebAssembly.instantiateStreaming(fetch(urlOrBuffer), imports)
+      source = await _WebAssembly.instantiateStreaming(fetch(urlOrBuffer), imports)
     } catch (_) {
       source = await fetchWasm(urlOrBuffer, imports)
     }
@@ -78,8 +85,8 @@ export function loadSync (
     imports = asyncifyHelper.wrapImports(imports)
   }
 
-  const module = new WebAssembly.Module(buffer)
-  const instance = new WebAssembly.Instance(module, imports)
+  const module = new _WebAssembly.Module(buffer)
+  const instance = new _WebAssembly.Instance(module, imports)
   const source = { instance, module }
   if (asyncify) {
     const memory: any = source.instance.exports.memory || imports.env?.memory

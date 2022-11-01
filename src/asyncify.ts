@@ -1,3 +1,4 @@
+import { _WebAssembly } from './webassembly'
 import { isPromiseLike } from './wasi/util'
 
 const ignoreNames = [
@@ -102,7 +103,7 @@ export class Asyncify {
     if (this.exports) {
       throw new Error('Asyncify has been initialized')
     }
-    if (!(memory instanceof WebAssembly.Memory)) {
+    if (!(memory instanceof _WebAssembly.Memory)) {
       throw new TypeError('Require WebAssembly.Memory object')
     }
     const exports = instance.exports
@@ -135,7 +136,7 @@ export class Asyncify {
       new Int32Array(memory.buffer, this.dataPtr).set([address.start, address.end])
     }
     this.exports = this.wrapExports(exports, options.wrapExports as any) as any
-    const asyncifiedInstance = Object.create(WebAssembly.Instance.prototype)
+    const asyncifiedInstance = Object.create(_WebAssembly.Instance.prototype)
     Object.defineProperty(asyncifiedInstance, 'exports', { value: this.exports })
     // Object.setPrototypeOf(instance, Instance.prototype)
     return asyncifiedInstance

@@ -1,4 +1,5 @@
 // import { vol } from 'memfs-browser'
+import { _WebAssembly } from '../webassembly'
 import type { IFs } from 'memfs-browser'
 import { resolve } from './path'
 
@@ -204,7 +205,7 @@ export class WASI {
   }
 
   _setMemory?: (m: WebAssembly.Memory) => void = function _setMemory (this: WASI, m: WebAssembly.Memory) {
-    if (!(m instanceof WebAssembly.Memory)) {
+    if (!(m instanceof _WebAssembly.Memory)) {
       throw new TypeError('"instance.exports.memory" property must be a WebAssembly.Memory')
     }
     _memory.set(this, extendMemory(m))
@@ -551,6 +552,9 @@ export class WASI {
     let buffer: Uint8Array
     let nread: number = 0
     if (fd === 0) {
+      if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
+        return WasiErrno.ENOTSUP
+      }
       buffer = readStdin()
       nread = buffer ? copyMemory(ioVecs, buffer) : 0
     } else {

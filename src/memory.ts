@@ -1,5 +1,10 @@
+import { _WebAssembly } from './webassembly'
+
 /** @public */
-export class Memory extends WebAssembly.Memory {
+export const WebAssemblyMemory = _WebAssembly.Memory
+
+/** @public */
+export class Memory extends WebAssemblyMemory {
   // eslint-disable-next-line @typescript-eslint/no-useless-constructor
   constructor (descriptor: WebAssembly.MemoryDescriptor) {
     super(descriptor)
@@ -20,7 +25,7 @@ export class Memory extends WebAssembly.Memory {
 
 /** @public */
 export function extendMemory (memory: WebAssembly.Memory): Memory {
-  if (Object.getPrototypeOf(memory) === WebAssembly.Memory.prototype) {
+  if (Object.getPrototypeOf(memory) === _WebAssembly.Memory.prototype) {
     Object.setPrototypeOf(memory, Memory.prototype)
   }
   return memory as Memory
