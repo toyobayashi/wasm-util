@@ -10,3 +10,5 @@ miniprogram_dist
 /test/build
 /test/webpack
 /test/**/*.wasm
+/test/**/*.wat
+/test/**/*.o

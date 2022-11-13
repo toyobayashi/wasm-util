@@ -1,5 +1,5 @@
 import { _WebAssembly } from './webassembly'
-import { isPromiseLike } from './wasi/util'
+import { isPromiseLike, wrapInstanceExports } from './wasi/util'
 
 const ignoreNames = [
   'asyncify_get_state',
@@ -202,21 +202,13 @@ export class Asyncify {
   public wrapExports<T extends WebAssembly.Exports> (exports: T): AsyncifyExports<T, void>
   public wrapExports<T extends WebAssembly.Exports, U extends Array<Exclude<keyof T, AsyncifyExportName>>> (exports: T, needWrap: U): AsyncifyExports<T, U>
   public wrapExports<T extends WebAssembly.Exports, U extends Array<Exclude<keyof T, AsyncifyExportName>>> (exports: T, needWrap?: U): AsyncifyExports<T, U> {
-    const newExports = Object.create(null)
-    Object.keys(exports).forEach(name => {
-      const exportValue = exports[name]
+    return wrapInstanceExports(exports, (exportValue, name) => {
       let ignore = ignoreNames.indexOf(name) !== -1 || typeof exportValue !== 'function'
       if (Array.isArray(needWrap)) {
         ignore = ignore || (needWrap.indexOf(name as any) === -1)
       }
-      Object.defineProperty(newExports, name, {
-        enumerable: true,
-        value: ignore ? exportValue : this.wrapExportFunction(exportValue as any)
-      })
-    })
-
-    // wrappedExports.set(exports, newExports)
-    return newExports
+      return ignore ? exportValue : this.wrapExportFunction(exportValue as any)
+    }) as AsyncifyExports<T, U>
   }
 }
 
