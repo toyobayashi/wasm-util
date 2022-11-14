@@ -1,4 +1,4 @@
-import type { IFs } from 'memfs-browser'
+import type { IFs } from './fs'
 import { WASI as _WASI } from './preview1'
 import type { Preopen } from './preview1'
 import type { exitcode } from './types'

@@ -1,6 +1,5 @@
-// import { vol } from 'memfs-browser'
 import { _WebAssembly } from '../webassembly'
-import type { IFs } from 'memfs-browser'
+import type { IFs } from './fs'
 import { resolve } from './path'
 
 import {
@@ -59,17 +58,6 @@ interface WrappedData {
   fds: FileDescriptorTable
   args: string[]
   env: string[]
-}
-
-interface Dirent {
-  name: string
-  isDirectory(): boolean
-  isFile(): boolean
-  isBlockDevice(): boolean
-  isCharacterDevice(): boolean
-  isSymbolicLink(): boolean
-  isFIFO(): boolean
-  isSocket(): boolean
 }
 
 export interface Preopen {
@@ -148,7 +136,7 @@ function resolvePath (fs: IFs, fileDescriptor: FileDescriptor, path: string, fla
   let resolvedPath = resolve(fileDescriptor.realPath, path)
   if ((flags & 1) === 1) {
     try {
-      resolvedPath = fs.readlinkSync(resolvedPath) as string
+      resolvedPath = fs.readlinkSync(resolvedPath)
     } catch (err: any) {
       if (err.code !== 'EINVAL' && err.code !== 'ENOENT') {
         throw err
@@ -197,7 +185,7 @@ export class WASI {
 
     if (preopens.length > 0) {
       for (let i = 0; i < preopens.length; ++i) {
-        const realPath = fs!.realpathSync(preopens[i].realPath, 'utf8') as string
+        const realPath = fs!.realpathSync(preopens[i].realPath, 'utf8')
         const fd = fs!.openSync(realPath, 'r', 0o666)
         fds.insertPreopen(fd, preopens[i].mappedPath, realPath)
       }
@@ -340,7 +328,7 @@ export class WASI {
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_ALLOCATE, BigInt(0))
     const stat = fs.fstatSync(fileDescriptor.fd, { bigint: true })
     if (stat.size < offset + len) {
-      fs.truncateSync(fileDescriptor.fd, Number(offset + len))
+      fs.ftruncateSync(fileDescriptor.fd, Number(offset + len))
     }
     return WasiErrno.ESUCCESS
   })
@@ -593,7 +581,7 @@ export class WASI {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READDIR, BigInt(0))
     const fs = getFs(this)
-    const entries = fs.readdirSync(fileDescriptor.realPath, { withFileTypes: true }) as Dirent[]
+    const entries = fs.readdirSync(fileDescriptor.realPath, { withFileTypes: true })
     const { HEAPU8, view } = getMemory(this)
     let bufferUsed = 0
     for (let i = Number(cookie); i < entries.length; i++) {
@@ -905,7 +893,7 @@ export class WASI {
 
     pathString = resolve(fileDescriptor.realPath, pathString)
     const fs = getFs(this)
-    const link = fs.readlinkSync(pathString) as string
+    const link = fs.readlinkSync(pathString)
     const linkData = encoder.encode(link)
     const len = Math.min(linkData.length, buf_len)
     if (len >= buf_len) return WasiErrno.ENOBUFS
