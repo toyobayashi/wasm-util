@@ -112,8 +112,8 @@ function defineName<T extends Function> (name: string, f: T): T {
   return f
 }
 
-function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (name: string, f: T): T {
-  return defineName(name, function (this: any) {
+function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (self: WASI, name: string, f: T): T {
+  return defineName(name, function () {
     if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
       const args = Array.prototype.slice.call(arguments)
       let debugArgs = [`${name}(${Array.from({ length: arguments.length }).map(() => '%d').join(', ')})`]
@@ -122,7 +122,7 @@ function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | Promi
     }
     let r: WasiErrno | PromiseLike<WasiErrno>
     try {
-      r = f.apply(this, arguments as any)
+      r = f.apply(self, arguments as any)
     } catch (err: any) {
       return handleError(err)
     }
@@ -283,12 +283,15 @@ export class WASI {
       parameterType?: WebAssembly.ValueType[],
       returnType?: WebAssembly.ValueType[]
     ): void {
-      _this[name] = syscallWrap(
-        name,
-        asyncFs
-          ? (asyncify ? asyncify.wrapImportFunction(asyncVersion!) : wrapAsyncImport(asyncVersion!, parameterType!, returnType!))
-          : syncVersion
-      )
+      if (asyncFs) {
+        if (asyncify) {
+          _this[name] = asyncify.wrapImportFunction(syscallWrap(_this, name, asyncVersion!))
+        } else {
+          _this[name] = wrapAsyncImport(syscallWrap(_this, name, asyncVersion!), parameterType!, returnType!)
+        }
+      } else {
+        _this[name] = syscallWrap(_this, name, syncVersion)
+      }
     }
 
     defineImport('fd_allocate',
@@ -1121,7 +1124,7 @@ export class WASI {
         }
         path_len = Number(path_len)
         fs_rights_base = BigInt(fs_rights_base)
-        fs_rights_base = BigInt(fs_rights_base)
+        fs_rights_inheriting = BigInt(fs_rights_inheriting)
 
         const {
           flags: flagsRes,
@@ -1173,7 +1176,7 @@ export class WASI {
         }
         path_len = Number(path_len)
         fs_rights_base = BigInt(fs_rights_base)
-        fs_rights_base = BigInt(fs_rights_base)
+        fs_rights_inheriting = BigInt(fs_rights_inheriting)
 
         const {
           flags: flagsRes,
@@ -1446,16 +1449,18 @@ export class WASI {
       },
       ['i32', 'i32', 'i32'], ['i32']
     )
-  }
 
-  _setMemory?: (m: WebAssembly.Memory) => void = function _setMemory (this: WASI, m: WebAssembly.Memory) {
-    if (!(m instanceof _WebAssembly.Memory)) {
-      throw new TypeError('"instance.exports.memory" property must be a WebAssembly.Memory')
+    this._setMemory = function setMemory (m: WebAssembly.Memory) {
+      if (!(m instanceof _WebAssembly.Memory)) {
+        throw new TypeError('"instance.exports.memory" property must be a WebAssembly.Memory')
+      }
+      _memory.set(_this, extendMemory(m))
     }
-    _memory.set(this, extendMemory(m))
   }
 
-  args_get = syscallWrap('args_get', function (argv: Pointer<Pointer<u8>>, argv_buf: Pointer<u8>): WasiErrno {
+  _setMemory?: (m: WebAssembly.Memory) => void
+
+  args_get = syscallWrap(this, 'args_get', function (argv: Pointer<Pointer<u8>>, argv_buf: Pointer<u8>): WasiErrno {
     argv = Number(argv)
     argv_buf = Number(argv_buf)
     if (argv === 0 || argv_buf === 0) {
@@ -1478,7 +1483,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  args_sizes_get = syscallWrap('args_sizes_get', function (argc: Pointer<size>, argv_buf_size: Pointer<size>): WasiErrno {
+  args_sizes_get = syscallWrap(this, 'args_sizes_get', function (argc: Pointer<size>, argv_buf_size: Pointer<size>): WasiErrno {
     argc = Number(argc)
     argv_buf_size = Number(argv_buf_size)
     if (argc === 0 || argv_buf_size === 0) {
@@ -1492,7 +1497,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  environ_get = syscallWrap('environ_get', function (environ: Pointer<Pointer<u8>>, environ_buf: Pointer<u8>): WasiErrno {
+  environ_get = syscallWrap(this, 'environ_get', function (environ: Pointer<Pointer<u8>>, environ_buf: Pointer<u8>): WasiErrno {
     environ = Number(environ)
     environ_buf = Number(environ_buf)
     if (environ === 0 || environ_buf === 0) {
@@ -1514,7 +1519,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  environ_sizes_get = syscallWrap('environ_sizes_get', function (len: Pointer<size>, buflen: Pointer<size>): WasiErrno {
+  environ_sizes_get = syscallWrap(this, 'environ_sizes_get', function (len: Pointer<size>, buflen: Pointer<size>): WasiErrno {
     len = Number(len)
     buflen = Number(buflen)
     if (len === 0 || buflen === 0) {
@@ -1527,7 +1532,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  clock_res_get = syscallWrap('clock_res_get', function (id: WasiClockid, resolution: Pointer<u64>): WasiErrno {
+  clock_res_get = syscallWrap(this, 'clock_res_get', function (id: WasiClockid, resolution: Pointer<u64>): WasiErrno {
     resolution = Number(resolution)
     if (resolution === 0) {
       return WasiErrno.EINVAL
@@ -1547,7 +1552,7 @@ export class WASI {
     }
   })
 
-  clock_time_get = syscallWrap('clock_time_get', function (id: WasiClockid, _percision: u64, time: Pointer<u64>): WasiErrno {
+  clock_time_get = syscallWrap(this, 'clock_time_get', function (id: WasiClockid, _percision: u64, time: Pointer<u64>): WasiErrno {
     time = Number(time)
     if (time === 0) {
       return WasiErrno.EINVAL
@@ -1574,11 +1579,11 @@ export class WASI {
     }
   })
 
-  fd_advise = syscallWrap('fd_advise', function (_fd: fd, _offset: filesize, _len: filesize, _advice: u8): WasiErrno {
+  fd_advise = syscallWrap(this, 'fd_advise', function (_fd: fd, _offset: filesize, _len: filesize, _advice: u8): WasiErrno {
     return WasiErrno.ENOSYS
   })
 
-  fd_fdstat_get = syscallWrap('fd_fdstat_get', function (fd: fd, fdstat: Pointer): WasiErrno {
+  fd_fdstat_get = syscallWrap(this, 'fd_fdstat_get', function (fd: fd, fdstat: Pointer): WasiErrno {
     fdstat = Number(fdstat)
     if (fdstat === 0) {
       return WasiErrno.EINVAL
@@ -1593,11 +1598,11 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_fdstat_set_flags = syscallWrap('fd_fdstat_set_flags', function (_fd: fd, _flags: number): WasiErrno {
+  fd_fdstat_set_flags = syscallWrap(this, 'fd_fdstat_set_flags', function (_fd: fd, _flags: number): WasiErrno {
     return WasiErrno.ENOSYS
   })
 
-  fd_fdstat_set_rights = syscallWrap('fd_fdstat_set_rights', function (fd: fd, rightsBase: bigint, rightsInheriting: bigint): WasiErrno {
+  fd_fdstat_set_rights = syscallWrap(this, 'fd_fdstat_set_rights', function (fd: fd, rightsBase: bigint, rightsInheriting: bigint): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
     if ((rightsBase | fileDescriptor.rightsBase) > fileDescriptor.rightsBase) {
@@ -1614,7 +1619,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_prestat_get = syscallWrap('fd_prestat_get', function (this: WASI, fd: fd, prestat: Pointer): WasiErrno {
+  fd_prestat_get = syscallWrap(this, 'fd_prestat_get', function (this: WASI, fd: fd, prestat: Pointer): WasiErrno {
     prestat = Number(prestat)
     if (prestat === 0) {
       return WasiErrno.EINVAL
@@ -1636,7 +1641,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_prestat_dir_name = syscallWrap('fd_prestat_dir_name', function (fd: fd, path: Pointer<u8>, path_len: size): WasiErrno {
+  fd_prestat_dir_name = syscallWrap(this, 'fd_prestat_dir_name', function (fd: fd, path: Pointer<u8>, path_len: size): WasiErrno {
     path = Number(path)
     path_len = Number(path_len)
     if (path === 0) {
@@ -1654,7 +1659,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_seek = syscallWrap('fd_seek', function (fd: fd, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
+  fd_seek = syscallWrap(this, 'fd_seek', function (fd: fd, offset: filedelta, whence: WasiWhence, newOffset: Pointer<filesize>): WasiErrno {
     newOffset = Number(newOffset)
     if (newOffset === 0) {
       return WasiErrno.EINVAL
@@ -1668,7 +1673,7 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  fd_tell = syscallWrap('fd_tell', function (fd: fd, offset: Pointer): WasiErrno {
+  fd_tell = syscallWrap(this, 'fd_tell', function (fd: fd, offset: Pointer): WasiErrno {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_TELL, BigInt(0))
     const pos = BigInt(fileDescriptor.pos)
@@ -1677,24 +1682,24 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  poll_oneoff = syscallWrap('poll_oneoff', function (_in: Pointer, _out: Pointer, _sub: size, _nevents: Pointer): WasiErrno {
+  poll_oneoff = syscallWrap(this, 'poll_oneoff', function (_in: Pointer, _out: Pointer, _sub: size, _nevents: Pointer): WasiErrno {
     return WasiErrno.ENOSYS
   })
 
-  proc_exit = syscallWrap('proc_exit', function (_rval: exitcode): WasiErrno {
+  proc_exit = syscallWrap(this, 'proc_exit', function (_rval: exitcode): WasiErrno {
     return WasiErrno.ESUCCESS
   })
 
-  proc_raise = syscallWrap('proc_raise', function (_sig: number): WasiErrno {
+  proc_raise = syscallWrap(this, 'proc_raise', function (_sig: number): WasiErrno {
     return WasiErrno.ENOSYS
   })
 
-  sched_yield = syscallWrap('sched_yield', function (): WasiErrno {
+  sched_yield = syscallWrap(this, 'sched_yield', function (): WasiErrno {
     return WasiErrno.ESUCCESS
   })
 
   random_get = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
-    ? syscallWrap('random_get', function (buf: Pointer<u8>, buf_len: size): WasiErrno {
+    ? syscallWrap(this, 'random_get', function (buf: Pointer<u8>, buf_len: size): WasiErrno {
       buf = Number(buf)
       if (buf === 0) {
         return WasiErrno.EINVAL
@@ -1712,7 +1717,7 @@ export class WASI {
 
       return WasiErrno.ESUCCESS
     })
-    : syscallWrap('random_get', function (buf: Pointer<u8>, buf_len: size): WasiErrno {
+    : syscallWrap(this, 'random_get', function (buf: Pointer<u8>, buf_len: size): WasiErrno {
       buf = Number(buf)
       if (buf === 0) {
         return WasiErrno.EINVAL
@@ -1727,15 +1732,15 @@ export class WASI {
       return WasiErrno.ESUCCESS
     })
 
-  sock_recv = syscallWrap('sock_recv', function (): WasiErrno {
+  sock_recv = syscallWrap(this, 'sock_recv', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 
-  sock_send = syscallWrap('sock_send', function (): WasiErrno {
+  sock_send = syscallWrap(this, 'sock_send', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 
-  sock_shutdown = syscallWrap('sock_shutdown', function (): WasiErrno {
+  sock_shutdown = syscallWrap(this, 'sock_shutdown', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 }

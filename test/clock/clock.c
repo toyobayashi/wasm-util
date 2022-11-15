@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdio.h>
 
 int main() {
 	struct timespec ts1;

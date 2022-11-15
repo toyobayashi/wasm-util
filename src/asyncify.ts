@@ -149,17 +149,19 @@ export class Asyncify {
   }
 
   public wrapImportFunction<T extends Function> (f: T): T {
-    return ((...args: Array<number | bigint>) => {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const _this = this
+    return (function (this: any) {
       // eslint-disable-next-line no-unreachable-loop
-      while (this.exports!.asyncify_get_state() === AsyncifyState.REWINDING) {
-        this.exports!.asyncify_stop_rewind()
-        return this.value
+      while (_this.exports!.asyncify_get_state() === AsyncifyState.REWINDING) {
+        _this.exports!.asyncify_stop_rewind()
+        return _this.value
       }
-      this.assertState()
-      const v = f(...args)
+      _this.assertState()
+      const v = f.apply(this, arguments)
       if (!isPromiseLike(v)) return v
-      this.exports!.asyncify_start_unwind(this.dataPtr)
-      this.value = v
+      _this.exports!.asyncify_start_unwind(_this.dataPtr)
+      _this.value = v
     }) as any
   }
 
@@ -182,19 +184,21 @@ export class Asyncify {
   }
 
   public wrapExportFunction<T extends Function> (f: T): AsyncifyExportFunction<T> {
-    return (async (...args: Array<number | bigint>) => {
-      this.assertState()
-      let ret = f(...args)
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const _this = this
+    return (async function (this: any) {
+      _this.assertState()
+      let ret = f.apply(this, arguments)
 
-      while (this.exports!.asyncify_get_state() === AsyncifyState.UNWINDING) {
-        this.exports!.asyncify_stop_unwind()
-        this.value = await this.value
-        this.assertState()
-        this.exports!.asyncify_start_rewind(this.dataPtr)
-        ret = f()
+      while (_this.exports!.asyncify_get_state() === AsyncifyState.UNWINDING) {
+        _this.exports!.asyncify_stop_unwind()
+        _this.value = await _this.value
+        _this.assertState()
+        _this.exports!.asyncify_start_rewind(_this.dataPtr)
+        ret = f.call(this)
       }
 
-      this.assertState()
+      _this.assertState()
       return ret
     }) as any
   }

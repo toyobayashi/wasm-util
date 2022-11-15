@@ -175,10 +175,6 @@ export class WASI {
       options.printErr
     )
 
-    for (const prop in wrap) {
-      (wrap as any)[prop] = (wrap as any)[prop].bind(wrap)
-    }
-
     const setMemory = wrap._setMemory!
     delete wrap._setMemory
     const _this = new WASI(
@@ -214,10 +210,6 @@ export class WASI {
       options.printErr,
       options.asyncify
     )
-
-    for (const prop in wrap) {
-      (wrap as any)[prop] = (wrap as any)[prop].bind(wrap)
-    }
 
     const setMemory = wrap._setMemory!
     delete wrap._setMemory
