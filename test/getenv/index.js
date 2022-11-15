@@ -2,7 +2,7 @@
 
 describe('getenv', function () {
   it('getenv', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true,
       env: {
         PRESENT: '1'

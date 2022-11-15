@@ -4,7 +4,7 @@ describe('assert', function () {
   
 
   it('assert false', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/assert/assert_false.wasm', {
@@ -17,7 +17,7 @@ describe('assert', function () {
   })
 
   it('assert true', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/assert/assert_true.wasm', {

@@ -1,4 +1,4 @@
-import type { IFs, BigIntStats } from './fs'
+import type { IFs, BigIntStats, FileHandle } from './fs'
 import {
   WasiErrno,
   FileControlFlag,
@@ -34,7 +34,7 @@ export class FileDescriptor {
 
   constructor (
     public id: number,
-    public fd: number,
+    public fd: number | FileHandle,
     public path: string,
     public realPath: string,
     public type: WasiFileType,
@@ -132,9 +132,16 @@ export interface FileDescriptorTableOptions {
   in: number
   out: number
   err: number
-  fs?: IFs
   print?: (str: string) => void
   printErr?: (str: string) => void
+}
+
+export interface SyncTableOptions extends FileDescriptorTableOptions {
+  fs?: IFs | undefined
+}
+
+export interface AsyncTableOptions extends FileDescriptorTableOptions {
+  // fs: { promises: IFsPromises }
 }
 
 export class FileDescriptorTable {
@@ -144,13 +151,12 @@ export class FileDescriptorTable {
   public stdio: [number, number, number]
   public print?: (str: string) => void
   public printErr?: (str: string) => void
-  private readonly fs: IFs | undefined
-  constructor (options: FileDescriptorTableOptions) {
+
+  protected constructor (options: FileDescriptorTableOptions) {
     this.used = 0
     this.size = options.size
     this.fds = Array(options.size)
     this.stdio = [options.in, options.out, options.err]
-    this.fs = options.fs
     this.print = options.print
     this.printErr = options.printErr
 
@@ -174,7 +180,7 @@ export class FileDescriptorTable {
   }
 
   insert (
-    fd: number,
+    fd: number | FileHandle,
     mappedPath: string,
     realPath: string,
     type: WasiFileType,
@@ -202,7 +208,7 @@ export class FileDescriptorTable {
       entry = new StandardOutput(
         this.print ?? console.log,
         index,
-        fd,
+        fd as number,
         mappedPath,
         realPath,
         type,
@@ -214,7 +220,7 @@ export class FileDescriptorTable {
       entry = new StandardOutput(
         this.printErr ?? console.error,
         index,
-        fd,
+        fd as number,
         mappedPath,
         realPath,
         type,
@@ -238,20 +244,6 @@ export class FileDescriptorTable {
     this.fds[index] = entry
     this.used++
     return entry
-  }
-
-  getFileTypeByFd (fd: number): WasiFileType {
-    const stat: any = this.fs!.fstatSync(fd)
-    return toFileType(stat)
-  }
-
-  insertPreopen (fd: number, mappedPath: string, realPath: string): FileDescriptor {
-    const type = this.getFileTypeByFd(fd)
-    if (type !== WasiFileType.DIRECTORY) {
-      throw new WasiError(`Preopen not dir: ["${mappedPath}", "${realPath}"]`, WasiErrno.ENOTDIR)
-    }
-    const result = getRights(this.stdio, fd, 0, type)
-    return this.insert(fd, mappedPath, realPath, type, result.base, result.inheriting, 1)
   }
 
   get (id: number, base: bigint, inheriting: bigint): FileDescriptor {
@@ -284,6 +276,28 @@ export class FileDescriptorTable {
     this.fds[id] = undefined!
     this.used--
   }
+}
+
+export class SyncTable extends FileDescriptorTable {
+  private readonly fs: IFs | undefined
+  constructor (options: SyncTableOptions) {
+    super(options)
+    this.fs = options.fs
+  }
+
+  getFileTypeByFd (fd: number): WasiFileType {
+    const stats = this.fs!.fstatSync(fd, { bigint: true })
+    return toFileType(stats)
+  }
+
+  insertPreopen (fd: number, mappedPath: string, realPath: string): FileDescriptor {
+    const type = this.getFileTypeByFd(fd)
+    if (type !== WasiFileType.DIRECTORY) {
+      throw new WasiError(`Preopen not dir: ["${mappedPath}", "${realPath}"]`, WasiErrno.ENOTDIR)
+    }
+    const result = getRights(this.stdio, fd, 0, type)
+    return this.insert(fd, mappedPath, realPath, type, result.base, result.inheriting, 1)
+  }
 
   renumber (dst: number, src: number): void {
     if (dst === src) return
@@ -295,7 +309,45 @@ export class FileDescriptorTable {
     if (!dstEntry || !srcEntry || dstEntry.id !== dst || srcEntry.id !== src) {
       throw new WasiError('Invalid fd', WasiErrno.EBADF)
     }
-    this.fs!.closeSync(dstEntry.fd)
+    this.fs!.closeSync(dstEntry.fd as number)
+    this.fds[dst] = this.fds[src]
+    this.fds[dst].id = dst
+    this.fds[src] = undefined!
+    this.used--
+  }
+}
+
+export class AsyncTable extends FileDescriptorTable {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor (options: AsyncTableOptions) {
+    super(options)
+  }
+
+  async getFileTypeByFd (fd: FileHandle): Promise<WasiFileType> {
+    const stats = await fd.stat({ bigint: true })
+    return toFileType(stats)
+  }
+
+  async insertPreopen (fd: FileHandle, mappedPath: string, realPath: string): Promise<FileDescriptor> {
+    const type = await this.getFileTypeByFd(fd)
+    if (type !== WasiFileType.DIRECTORY) {
+      throw new WasiError(`Preopen not dir: ["${mappedPath}", "${realPath}"]`, WasiErrno.ENOTDIR)
+    }
+    const result = getRights(this.stdio, fd.fd, 0, type)
+    return this.insert(fd, mappedPath, realPath, type, result.base, result.inheriting, 1)
+  }
+
+  async renumber (dst: number, src: number): Promise<void> {
+    if (dst === src) return
+    if (dst >= this.size || src >= this.size) {
+      throw new WasiError('Invalid fd', WasiErrno.EBADF)
+    }
+    const dstEntry = this.fds[dst]
+    const srcEntry = this.fds[src]
+    if (!dstEntry || !srcEntry || dstEntry.id !== dst || srcEntry.id !== src) {
+      throw new WasiError('Invalid fd', WasiErrno.EBADF)
+    }
+    await (dstEntry.fd as FileHandle).close()
     this.fds[dst] = this.fds[src]
     this.fds[dst].id = dst
     this.fds[src] = undefined!

@@ -2,7 +2,7 @@
 
 describe('stdout', function () {
   it('stdout', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/stdout/stdout.wasm', {
@@ -13,7 +13,7 @@ describe('stdout', function () {
   })
 
   it('stderr', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/stdout/stderr.wasm', {

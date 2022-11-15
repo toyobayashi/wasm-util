@@ -6,15 +6,12 @@ describe('ftruncate', function () {
     const vol = memfs.Volume.fromJSON({
       '/ftruncate.dir': null
     })
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true,
       preopens: {
         'ftruncate.dir': 'ftruncate.dir'
       },
-      filesystem: {
-        type: 'memfs',
-        fs: memfs.createFsFromVolume(vol)
-      }
+      fs: memfs.createFsFromVolume(vol)
     })
     const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate.wasm', {
       wasi_snapshot_preview1: wasi.wasiImport

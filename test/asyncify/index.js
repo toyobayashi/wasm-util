@@ -2,7 +2,7 @@
 
 describe('asyncify', function () {
   it('sleep 200ms', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
 

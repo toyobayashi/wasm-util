@@ -25,7 +25,7 @@ const fs = createFsFromVolume(Volume.from({
   '/home/wasi': null
 }))
 
-const wasi = new WASI({
+const wasi = WASI.createSync({
   args: ['chrome', 'file.wasm'],
   env: {
     NODE_ENV: 'development',
@@ -34,7 +34,7 @@ const wasi = new WASI({
   preopens: {
     '/': '/'
   },
-  filesystem: { type: 'memfs', fs },
+  fs,
 
   // redirect stdout / stderr
 

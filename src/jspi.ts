@@ -15,11 +15,11 @@ function checkWebAssemblyFunction (): any {
 }
 
 /** @public */
-export function wrapAsyncImport (
-  f: Function,
+export function wrapAsyncImport<T extends (...args: any[]) => any> (
+  f: T,
   parameterType: WebAssembly.ValueType[],
   returnType: WebAssembly.ValueType[]
-): Function {
+): (...args: [object, ...Parameters<T>]) => ReturnType<T> {
   const WebAssemblyFunction = checkWebAssemblyFunction()
   if (typeof f !== 'function') {
     throw new TypeError('Function required')

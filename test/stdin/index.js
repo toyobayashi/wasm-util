@@ -7,7 +7,7 @@ describe('stdin', function () {
     window.prompt = function (message, defaultValue) {
       return prompt.call(window, 'Test stdin', 'Hello, stdin!')
     }
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/stdin/stdin.wasm', {

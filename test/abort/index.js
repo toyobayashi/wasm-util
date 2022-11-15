@@ -2,7 +2,7 @@
 
 describe('abort', function () {
   it('should throw RuntimeError', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/abort/abort.wasm', {

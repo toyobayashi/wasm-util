@@ -2,7 +2,7 @@
 
 describe('clock', function () {
   it('clock', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/clock/clock.wasm', {

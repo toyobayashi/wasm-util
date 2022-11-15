@@ -2,7 +2,7 @@
 
 describe('getentropy', function () {
   it('getentropy', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
     const { instance } = await wasmUtil.load('/test/getentropy/getentropy.wasm', {

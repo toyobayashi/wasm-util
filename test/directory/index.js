@@ -6,15 +6,12 @@ describe('directory', function () {
     const vol = memfs.Volume.fromJSON({
       '/fopen-directory-parent-directory.dir': null
     })
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true,
       preopens: {
         'fopen-directory-parent-directory.dir': 'fopen-directory-parent-directory.dir'
       },
-      filesystem: {
-        type: 'memfs',
-        fs: memfs.createFsFromVolume(vol)
-      }
+      fs: memfs.createFsFromVolume(vol)
     })
     const { instance } = await wasmUtil.load('/test/directory/directory.wasm', {
       wasi_snapshot_preview1: wasi.wasiImport

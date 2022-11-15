@@ -2,7 +2,7 @@
 
 describe('memory', function () {
   it('import memory', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
 
@@ -47,7 +47,7 @@ describe('memory', function () {
   })
 
   it('export memory', async function () {
-    const wasi = new wasmUtil.WASI({
+    const wasi = wasmUtil.WASI.createSync({
       returnOnExit: true
     })
 
