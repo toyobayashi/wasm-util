@@ -5,6 +5,12 @@ import type { AsyncifyOptions } from './asyncify'
 declare const wx: any
 declare const __wxConfig: any
 
+function validateImports (imports: unknown): void {
+  if (imports && typeof imports !== 'object') {
+    throw new TypeError('imports must be an object or undefined')
+  }
+}
+
 async function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Imports): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   if (typeof wx !== 'undefined' && typeof __wxConfig !== 'undefined') {
     return await _WebAssembly.instantiate(urlOrBuffer as any, imports)
@@ -18,28 +24,15 @@ async function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Impor
 /** @public */
 export async function load (
   urlOrBuffer: string | URL | BufferSource,
-  imports?: WebAssembly.Imports,
-  asyncify?: AsyncifyOptions
+  imports?: WebAssembly.Imports
 ): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
-  if (imports && typeof imports !== 'object') {
-    throw new TypeError('imports must be an object or undefined')
-  }
+  validateImports(imports)
   imports = imports ?? {}
 
-  let asyncifyHelper: Asyncify
   let source: WebAssembly.WebAssemblyInstantiatedSource
-
-  if (asyncify) {
-    asyncifyHelper = new Asyncify()
-    imports = asyncifyHelper.wrapImports(imports)
-  }
 
   if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
     source = await _WebAssembly.instantiate(urlOrBuffer, imports)
-    if (asyncify) {
-      const memory: any = source.instance.exports.memory || imports.env?.memory
-      return { module: source.module, instance: asyncifyHelper!.init(memory, source.instance, asyncify) }
-    }
     return source
   }
 
@@ -56,41 +49,58 @@ export async function load (
   } else {
     source = await fetchWasm(urlOrBuffer, imports)
   }
-  if (asyncify) {
-    const memory: any = source.instance.exports.memory || imports.env?.memory
-    return { module: source.module, instance: asyncifyHelper!.init(memory, source.instance, asyncify) }
-  }
   return source
+}
+
+export async function asyncifyLoad (
+  asyncify: AsyncifyOptions,
+  urlOrBuffer: string | URL | BufferSource,
+  imports?: WebAssembly.Imports
+): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
+  validateImports(imports)
+  imports = imports ?? {}
+
+  const asyncifyHelper = new Asyncify()
+  imports = asyncifyHelper.wrapImports(imports)
+
+  const source = await load(urlOrBuffer, imports)
+
+  const memory: any = source.instance.exports.memory || imports.env?.memory
+  return { module: source.module, instance: asyncifyHelper.init(memory, source.instance, asyncify) }
 }
 
 /** @public */
 export function loadSync (
   buffer: BufferSource,
-  imports?: WebAssembly.Imports,
-  asyncify?: AsyncifyOptions
+  imports?: WebAssembly.Imports
 ): WebAssembly.WebAssemblyInstantiatedSource {
   if ((buffer instanceof ArrayBuffer) && !ArrayBuffer.isView(buffer)) {
     throw new TypeError('Invalid source')
   }
 
-  if (imports && typeof imports !== 'object') {
-    throw new TypeError('imports must be an object or undefined')
-  }
+  validateImports(imports)
   imports = imports ?? {}
-
-  let asyncifyHelper: Asyncify
-
-  if (asyncify) {
-    asyncifyHelper = new Asyncify()
-    imports = asyncifyHelper.wrapImports(imports)
-  }
 
   const module = new _WebAssembly.Module(buffer)
   const instance = new _WebAssembly.Instance(module, imports)
   const source = { instance, module }
-  if (asyncify) {
-    const memory: any = source.instance.exports.memory || imports.env?.memory
-    return { module: source.module, instance: asyncifyHelper!.init(memory, instance, asyncify) }
-  }
+
   return source
+}
+
+export function asyncifyLoadSync (
+  asyncify: AsyncifyOptions,
+  buffer: BufferSource,
+  imports?: WebAssembly.Imports
+): WebAssembly.WebAssemblyInstantiatedSource {
+  validateImports(imports)
+  imports = imports ?? {}
+
+  const asyncifyHelper = new Asyncify()
+  imports = asyncifyHelper.wrapImports(imports)
+
+  const source = loadSync(buffer, imports)
+
+  const memory: any = source.instance.exports.memory || imports.env?.memory
+  return { module: source.module, instance: asyncifyHelper.init(memory, source.instance, asyncify) }
 }
