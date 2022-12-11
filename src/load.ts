@@ -52,6 +52,7 @@ export async function load (
   return source
 }
 
+/** @public */
 export async function asyncifyLoad (
   asyncify: AsyncifyOptions,
   urlOrBuffer: string | URL | BufferSource,
@@ -88,6 +89,7 @@ export function loadSync (
   return source
 }
 
+/** @public */
 export function asyncifyLoadSync (
   asyncify: AsyncifyOptions,
   buffer: BufferSource,
