@@ -162,8 +162,10 @@ async function resolvePathAsync (fs: { promises: IFsPromises }, fileDescriptor: 
   return resolvedPath
 }
 
-const encoder = new TextEncoder()
-const decoder = new TextDecoder()
+// eslint-disable-next-line spaced-comment
+const encoder = /*#__PURE__*/ new TextEncoder()
+// eslint-disable-next-line spaced-comment
+const decoder = /*#__PURE__*/ new TextDecoder()
 
 function readStdin (): Uint8Array {
   const value = window.prompt()

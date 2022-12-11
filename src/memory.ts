@@ -2,7 +2,7 @@
 import { _WebAssembly } from './webassembly'
 
 /** @public */
-export const WebAssemblyMemory = /*#__PURE__*/ _WebAssembly.Memory
+export const WebAssemblyMemory = /*#__PURE__*/ (function () { return _WebAssembly.Memory })()
 
 /** @public */
 export class Memory extends WebAssemblyMemory {
