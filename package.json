@@ -1,6 +1,6 @@
 {
   "name": "@tybys/wasm-util",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "WASI polyfill for browser and some wasm util",
   "main": "./lib/cjs/index.js",
   "module": "./dist/wasm-util.esm-bundler.js",
@@ -35,6 +35,9 @@
   },
   "author": "toyobayashi",
   "license": "MIT",
+  "dependencies": {
+    "tslib": "^2.4.0"
+  },
   "devDependencies": {
     "@tybys/ts-transform-module-specifier": "^0.0.2",
     "@tybys/ts-transform-pure-class": "^0.1.1",

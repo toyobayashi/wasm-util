@@ -11,29 +11,27 @@ function validateImports (imports: unknown): void {
   }
 }
 
-async function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Imports): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
+function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Imports): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   if (typeof wx !== 'undefined' && typeof __wxConfig !== 'undefined') {
-    return await _WebAssembly.instantiate(urlOrBuffer as any, imports)
+    return _WebAssembly.instantiate(urlOrBuffer as any, imports)
   }
-  const response = await fetch(urlOrBuffer)
-  const buffer = await response.arrayBuffer()
-  const source = await _WebAssembly.instantiate(buffer, imports)
-  return source
+  return fetch(urlOrBuffer)
+    .then(response => response.arrayBuffer())
+    .then(buffer => _WebAssembly.instantiate(buffer, imports))
 }
 
 /** @public */
-export async function load (
+export function load (
   urlOrBuffer: string | URL | BufferSource,
   imports?: WebAssembly.Imports
 ): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   validateImports(imports)
   imports = imports ?? {}
 
-  let source: WebAssembly.WebAssemblyInstantiatedSource
+  let source: Promise<WebAssembly.WebAssemblyInstantiatedSource>
 
   if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
-    source = await _WebAssembly.instantiate(urlOrBuffer, imports)
-    return source
+    return _WebAssembly.instantiate(urlOrBuffer, imports)
   }
 
   if (typeof urlOrBuffer !== 'string' && !(urlOrBuffer instanceof URL)) {
@@ -41,19 +39,23 @@ export async function load (
   }
 
   if (typeof _WebAssembly.instantiateStreaming === 'function') {
+    let responsePromise: Promise<Response>
     try {
-      source = await _WebAssembly.instantiateStreaming(fetch(urlOrBuffer), imports)
+      responsePromise = fetch(urlOrBuffer)
+      source = _WebAssembly.instantiateStreaming(responsePromise, imports).catch(() => {
+        return fetchWasm(urlOrBuffer, imports)
+      })
     } catch (_) {
-      source = await fetchWasm(urlOrBuffer, imports)
+      source = fetchWasm(urlOrBuffer, imports)
     }
   } else {
-    source = await fetchWasm(urlOrBuffer, imports)
+    source = fetchWasm(urlOrBuffer, imports)
   }
   return source
 }
 
 /** @public */
-export async function asyncifyLoad (
+export function asyncifyLoad (
   asyncify: AsyncifyOptions,
   urlOrBuffer: string | URL | BufferSource,
   imports?: WebAssembly.Imports
@@ -64,10 +66,10 @@ export async function asyncifyLoad (
   const asyncifyHelper = new Asyncify()
   imports = asyncifyHelper.wrapImports(imports)
 
-  const source = await load(urlOrBuffer, imports)
-
-  const memory: any = source.instance.exports.memory || imports.env?.memory
-  return { module: source.module, instance: asyncifyHelper.init(memory, source.instance, asyncify) }
+  return load(urlOrBuffer, imports).then(source => {
+    const memory: any = source.instance.exports.memory || imports!.env?.memory
+    return { module: source.module, instance: asyncifyHelper.init(memory, source.instance, asyncify) }
+  })
 }
 
 /** @public */
