@@ -1,3 +1,4 @@
+/* eslint-disable spaced-comment */
 import { WasiError } from './error'
 import { WasiErrno, WasiRights, WasiFileType } from './types'
 
@@ -50,7 +51,7 @@ export const REGULAR_FILE_BASE = WasiRights.FD_DATASYNC |
                                  WasiRights.FD_FILESTAT_SET_SIZE |
                                  WasiRights.FD_FILESTAT_SET_TIMES |
                                  WasiRights.POLL_FD_READWRITE
-export const REGULAR_FILE_INHERITING = BigInt(0)
+export const REGULAR_FILE_INHERITING = /*#__PURE__*/ BigInt(0)
 
 export const DIRECTORY_BASE = WasiRights.FD_FDSTAT_SET_FLAGS |
                               WasiRights.FD_SYNC |
@@ -88,7 +89,7 @@ export const TTY_BASE = WasiRights.FD_READ |
                         WasiRights.FD_WRITE |
                         WasiRights.FD_FILESTAT_GET |
                         WasiRights.POLL_FD_READWRITE
-export const TTY_INHERITING = BigInt(0) as 0n
+export const TTY_INHERITING = /*#__PURE__*/ BigInt(0) as 0n
 
 export interface GetRightsResult {
   base: bigint

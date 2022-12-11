@@ -1,3 +1,4 @@
+/* eslint-disable spaced-comment */
 export const enum WasiErrno {
   ESUCCESS = 0,
   E2BIG = 1,
@@ -89,37 +90,68 @@ export const enum WasiFileType {
   SYMBOLIC_LINK = 7
 }
 
+const FD_DATASYNC = /*#__PURE__*/ (BigInt(1) << BigInt(0)) as 1n
+const FD_READ = /*#__PURE__*/ (BigInt(1) << BigInt(1)) as 2n
+const FD_SEEK = /*#__PURE__*/ (BigInt(1) << BigInt(2)) as 4n
+const FD_FDSTAT_SET_FLAGS = /*#__PURE__*/ (BigInt(1) << BigInt(3)) as 8n
+const FD_SYNC = /*#__PURE__*/ (BigInt(1) << BigInt(4)) as 16n
+const FD_TELL = /*#__PURE__*/ (BigInt(1) << BigInt(5)) as 32n
+const FD_WRITE = /*#__PURE__*/ (BigInt(1) << BigInt(6)) as 64n
+const FD_ADVISE = /*#__PURE__*/ (BigInt(1) << BigInt(7)) as 128n
+const FD_ALLOCATE = /*#__PURE__*/ (BigInt(1) << BigInt(8)) as 256n
+const PATH_CREATE_DIRECTORY = /*#__PURE__*/ (BigInt(1) << BigInt(9)) as 512n
+const PATH_CREATE_FILE = /*#__PURE__*/ (BigInt(1) << BigInt(10)) as 1024n
+const PATH_LINK_SOURCE = /*#__PURE__*/ (BigInt(1) << BigInt(11)) as 2048n
+const PATH_LINK_TARGET = /*#__PURE__*/ (BigInt(1) << BigInt(12)) as 4092n
+const PATH_OPEN = /*#__PURE__*/ (BigInt(1) << BigInt(13)) as 8192n
+const FD_READDIR = /*#__PURE__*/ (BigInt(1) << BigInt(14)) as 16384n
+const PATH_READLINK = /*#__PURE__*/ (BigInt(1) << BigInt(15)) as 32768n
+const PATH_RENAME_SOURCE = /*#__PURE__*/ (BigInt(1) << BigInt(16)) as 65536n
+const PATH_RENAME_TARGET = /*#__PURE__*/ (BigInt(1) << BigInt(17)) as 131072n
+const PATH_FILESTAT_GET = /*#__PURE__*/ (BigInt(1) << BigInt(18)) as 262144n
+const PATH_FILESTAT_SET_SIZE = /*#__PURE__*/ (BigInt(1) << BigInt(19)) as 524288n
+const PATH_FILESTAT_SET_TIMES = /*#__PURE__*/ (BigInt(1) << BigInt(20)) as 1048576n
+const FD_FILESTAT_GET = /*#__PURE__*/ (BigInt(1) << BigInt(21)) as 2097152n
+const FD_FILESTAT_SET_SIZE = /*#__PURE__*/ (BigInt(1) << BigInt(22)) as 4194304n
+const FD_FILESTAT_SET_TIMES = /*#__PURE__*/ (BigInt(1) << BigInt(23)) as 8388608n
+const PATH_SYMLINK = /*#__PURE__*/ (BigInt(1) << BigInt(24)) as 16777216n
+const PATH_REMOVE_DIRECTORY = /*#__PURE__*/ (BigInt(1) << BigInt(25)) as 33554432n
+const PATH_UNLINK_FILE = /*#__PURE__*/ (BigInt(1) << BigInt(26)) as 67108864n
+const POLL_FD_READWRITE = /*#__PURE__*/ (BigInt(1) << BigInt(27)) as 134217728n
+const SOCK_SHUTDOWN = /*#__PURE__*/ (BigInt(1) << BigInt(28)) as 268435456n
+const SOCK_ACCEPT = /*#__PURE__*/ (BigInt(1) << BigInt(29)) as 536870912n
+
 export const WasiRights = {
-  FD_DATASYNC: (BigInt(1) << BigInt(0)) as 1n,
-  FD_READ: (BigInt(1) << BigInt(1)) as 2n,
-  FD_SEEK: (BigInt(1) << BigInt(2)) as 4n,
-  FD_FDSTAT_SET_FLAGS: (BigInt(1) << BigInt(3)) as 8n,
-  FD_SYNC: (BigInt(1) << BigInt(4)) as 16n,
-  FD_TELL: (BigInt(1) << BigInt(5)) as 32n,
-  FD_WRITE: (BigInt(1) << BigInt(6)) as 64n,
-  FD_ADVISE: (BigInt(1) << BigInt(7)) as 128n,
-  FD_ALLOCATE: (BigInt(1) << BigInt(8)) as 256n,
-  PATH_CREATE_DIRECTORY: (BigInt(1) << BigInt(9)) as 512n,
-  PATH_CREATE_FILE: (BigInt(1) << BigInt(10)) as 1024n,
-  PATH_LINK_SOURCE: (BigInt(1) << BigInt(11)) as 2048n,
-  PATH_LINK_TARGET: (BigInt(1) << BigInt(12)) as 4092n,
-  PATH_OPEN: (BigInt(1) << BigInt(13)) as 8192n,
-  FD_READDIR: (BigInt(1) << BigInt(14)) as 16384n,
-  PATH_READLINK: (BigInt(1) << BigInt(15)) as 32768n,
-  PATH_RENAME_SOURCE: (BigInt(1) << BigInt(16)) as 65536n,
-  PATH_RENAME_TARGET: (BigInt(1) << BigInt(17)) as 131072n,
-  PATH_FILESTAT_GET: (BigInt(1) << BigInt(18)) as 262144n,
-  PATH_FILESTAT_SET_SIZE: (BigInt(1) << BigInt(19)) as 524288n,
-  PATH_FILESTAT_SET_TIMES: (BigInt(1) << BigInt(20)) as 1048576n,
-  FD_FILESTAT_GET: (BigInt(1) << BigInt(21)) as 2097152n,
-  FD_FILESTAT_SET_SIZE: (BigInt(1) << BigInt(22)) as 4194304n,
-  FD_FILESTAT_SET_TIMES: (BigInt(1) << BigInt(23)) as 8388608n,
-  PATH_SYMLINK: (BigInt(1) << BigInt(24)) as 16777216n,
-  PATH_REMOVE_DIRECTORY: (BigInt(1) << BigInt(25)) as 33554432n,
-  PATH_UNLINK_FILE: (BigInt(1) << BigInt(26)) as 67108864n,
-  POLL_FD_READWRITE: (BigInt(1) << BigInt(27)) as 134217728n,
-  SOCK_SHUTDOWN: (BigInt(1) << BigInt(28)) as 268435456n,
-  SOCK_ACCEPT: (BigInt(1) << BigInt(29)) as 536870912n
+  FD_DATASYNC,
+  FD_READ,
+  FD_SEEK,
+  FD_FDSTAT_SET_FLAGS,
+  FD_SYNC,
+  FD_TELL,
+  FD_WRITE,
+  FD_ADVISE,
+  FD_ALLOCATE,
+  PATH_CREATE_DIRECTORY,
+  PATH_CREATE_FILE,
+  PATH_LINK_SOURCE,
+  PATH_LINK_TARGET,
+  PATH_OPEN,
+  FD_READDIR,
+  PATH_READLINK,
+  PATH_RENAME_SOURCE,
+  PATH_RENAME_TARGET,
+  PATH_FILESTAT_GET,
+  PATH_FILESTAT_SET_SIZE,
+  PATH_FILESTAT_SET_TIMES,
+  FD_FILESTAT_GET,
+  FD_FILESTAT_SET_SIZE,
+  FD_FILESTAT_SET_TIMES,
+  PATH_SYMLINK,
+  PATH_REMOVE_DIRECTORY,
+  PATH_UNLINK_FILE,
+  POLL_FD_READWRITE,
+  SOCK_SHUTDOWN,
+  SOCK_ACCEPT
 }
 
 export const enum WasiWhence {

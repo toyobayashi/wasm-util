@@ -215,18 +215,3 @@ export class Asyncify {
     }) as AsyncifyExports<T, U>
   }
 }
-
-// /** @public */
-// export class Instance extends WebAssembly.Instance {
-//   constructor (options: AsyncifyOptions, module: WebAssembly.Module, importObject?: WebAssembly.Imports) {
-//     importObject = importObject ?? {}
-//     const asyncify = new Asyncify()
-//     super(module, asyncify.wrapImports(importObject))
-//     asyncify.init(importObject, this, options)
-//   }
-
-//   get exports (): WebAssembly.Exports {
-//     return wrappedExports.get(super.exports)!
-//   }
-// }
-// Object.defineProperty(Instance.prototype, 'exports', { enumerable: true })

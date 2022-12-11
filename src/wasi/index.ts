@@ -12,7 +12,8 @@ import {
 import type { IFs, IFsPromises } from './fs'
 import type { Asyncify } from '../asyncify'
 
-const kEmptyObject = Object.freeze(Object.create(null))
+// eslint-disable-next-line spaced-comment
+const kEmptyObject = /*#__PURE__*/ Object.freeze(/*#__PURE__*/ Object.create(null))
 const kExitCode = Symbol('kExitCode')
 const kSetMemory = Symbol('kSetMemory')
 const kStarted = Symbol('kStarted')

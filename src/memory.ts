@@ -1,7 +1,8 @@
+/* eslint-disable spaced-comment */
 import { _WebAssembly } from './webassembly'
 
 /** @public */
-export const WebAssemblyMemory = _WebAssembly.Memory
+export const WebAssemblyMemory = /*#__PURE__*/ _WebAssembly.Memory
 
 /** @public */
 export class Memory extends WebAssemblyMemory {
