@@ -151,6 +151,32 @@ function validateOptions (options: WASIOptions & { fs?: IFs | { promises: IFsPro
 
 /** @public */
 export class WASI {
+  static addWorkerListener (worker: any): void {
+    if (worker && !worker._tybysWasmUtilWasiListener) {
+      worker._tybysWasmUtilWasiListener = function _tybysWasmUtilWasiListener (e: any) {
+        const data = e.data
+        const msg = data.__tybys_wasm_util_wasi__
+        if (msg) {
+          const type = msg.type
+          const payload = msg.payload
+          if (type === 'set-timeout') {
+            const buffer = payload.buffer
+            setTimeout(() => {
+              const arr = new Int32Array(buffer)
+              Atomics.store(arr, 0, 1)
+              Atomics.notify(arr, 0)
+            }, payload.delay)
+          }
+        }
+      }
+      if (typeof worker.on === 'function') {
+        worker.on('message', worker._tybysWasmUtilWasiListener)
+      } else {
+        worker.addEventListener('message', worker._tybysWasmUtilWasiListener, false)
+      }
+    }
+  }
+
   private [kSetMemory]: (m: WebAssembly.Memory) => void
   private [kStarted]: boolean
   private [kExitCode]: number

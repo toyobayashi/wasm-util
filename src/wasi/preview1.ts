@@ -29,12 +29,14 @@ import type {
 import { concatBuffer, toFileStat, AsyncTable, SyncTable, FileDescriptorTable } from './fd'
 import type { FileDescriptor, StandardOutput } from './fd'
 import { WasiError } from './error'
-import { isPromiseLike } from './util'
+import { isMainThread, isPromiseLike, postMsg, sleepSync } from './util'
 import { getRights } from './rights'
 import type { Memory } from '../memory'
 import { extendMemory } from '../memory'
 import type { Asyncify } from '../asyncify'
 import { wrapAsyncImport } from '../jspi'
+
+const util = { sleepSync }
 
 function copyMemory (targets: Uint8Array[], src: Uint8Array): number {
   if (targets.length === 0 || src.length === 0) return 0
@@ -1684,11 +1686,88 @@ export class WASI {
     return WasiErrno.ESUCCESS
   })
 
-  poll_oneoff = syscallWrap(this, 'poll_oneoff', function (_in: Pointer, _out: Pointer, _sub: size, _nevents: Pointer): WasiErrno {
-    return WasiErrno.ENOSYS
+  poll_oneoff = syscallWrap(this, 'poll_oneoff', function (in_ptr: Pointer, out_ptr: Pointer, nsubscriptions: size, nevents: Pointer): WasiErrno {
+    in_ptr = Number(in_ptr)
+    out_ptr = Number(out_ptr)
+    nevents = Number(nevents)
+    nsubscriptions = Number(nsubscriptions)
+    nsubscriptions = nsubscriptions >>> 0
+
+    if (in_ptr === 0 || out_ptr === 0 || nsubscriptions === 0 || nevents === 0) {
+      return WasiErrno.EINVAL
+    }
+
+    const { view } = getMemory(this)
+    view.setUint32(nevents, 0, true)
+
+    let i = 0
+    let timer_userdata = BigInt(0)
+    let cur_timeout = BigInt(0)
+    let has_timeout = 0
+    let min_timeout = BigInt(0)
+    let sub
+
+    for (i = 0; i < nsubscriptions; i++) {
+      sub = in_ptr + i * 48
+      const subType = Number(view.getBigUint64(sub + 8, true))
+      switch (subType) {
+        case 0: {
+          const clockFlags = Number(view.getBigUint64(sub + 40, true))
+          const clockTimeout = view.getBigUint64(sub + 24, true)
+          const userdata = view.getBigUint64(sub, true)
+          if (clockFlags === 1) {
+            /* Convert absolute time to relative delay. */
+            const now = BigInt(Date.now()) * BigInt(1000000)
+            cur_timeout = clockTimeout - now
+          } else {
+            cur_timeout = clockTimeout
+          }
+
+          if (has_timeout === 0 || cur_timeout < min_timeout) {
+            min_timeout = cur_timeout
+            timer_userdata = userdata
+            has_timeout = 1
+          }
+          break
+        }
+        case 1:
+        case 2:
+          break
+        default: return WasiErrno.EINVAL
+      }
+    }
+    if (has_timeout) {
+      const delay = Number(min_timeout / BigInt(1000000))
+      if (isMainThread || typeof SharedArrayBuffer !== 'function') {
+        util.sleepSync(delay)
+      } else {
+        const buf = new SharedArrayBuffer(4)
+        const arr = new Int32Array(buf)
+        postMsg({
+          __tybys_wasm_util_wasi__: {
+            type: 'set-timeout',
+            payload: {
+              buffer: buf,
+              delay
+            }
+          }
+        })
+        Atomics.wait(arr, 0, 0)
+      }
+
+      const event = out_ptr
+      view.setBigUint64(event, timer_userdata, true)
+      view.setUint32(event + 8, WasiErrno.ESUCCESS, true)
+      view.setUint32(event + 12, 0, true)
+      view.setUint32(nevents, 1, true)
+    }
+    return WasiErrno.ESUCCESS
   })
 
-  proc_exit = syscallWrap(this, 'proc_exit', function (_rval: exitcode): WasiErrno {
+  proc_exit = syscallWrap(this, 'proc_exit', function (rval: exitcode): WasiErrno {
+    if ((typeof process === 'object') && (process !== null) && (typeof process.exit === 'function')) {
+      process.exit(rval)
+    }
     return WasiErrno.ESUCCESS
   })
 

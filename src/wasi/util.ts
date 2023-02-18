@@ -62,3 +62,56 @@ export function wrapInstanceExports (exports: WebAssembly.Exports, mapFn: (value
 
   return newExports
 }
+
+declare const __webpack_public_path__: string
+declare const __non_webpack_require__: any
+
+const _require = (function () {
+  let nativeRequire
+
+  if (typeof __webpack_public_path__ !== 'undefined') {
+    nativeRequire = (function () {
+      return typeof __non_webpack_require__ !== 'undefined' ? __non_webpack_require__ : undefined
+    })()
+  } else {
+    nativeRequire = (function () {
+      return typeof __webpack_public_path__ !== 'undefined' ? (typeof __non_webpack_require__ !== 'undefined' ? __non_webpack_require__ : undefined) : (typeof require !== 'undefined' ? require : undefined)
+    })()
+  }
+
+  return nativeRequire
+})()
+
+export const isMainThread: boolean = (function () {
+  let worker_threads
+  try {
+    worker_threads = _require('worker_threads')
+  } catch (_) {}
+  if (!worker_threads) {
+    return typeof importScripts === 'undefined'
+  }
+  return worker_threads.isMainThread
+})()
+
+export const postMsg = isMainThread
+  ? () => {}
+  : (function () {
+      let worker_threads: undefined | typeof import('worker_threads')
+      try {
+        worker_threads = _require('worker_threads')
+      } catch (_) {}
+      if (!worker_threads) {
+        return postMessage
+      }
+      return function postMessage (data: any) {
+        worker_threads!.parentPort!.postMessage({ data })
+      }
+    })()
+
+export function sleepSync (this: any, delay: number): void {
+  const start = Date.now()
+  const end = start + delay
+  while (Date.now() < end) {
+    void this['']
+  }
+}
