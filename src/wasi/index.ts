@@ -149,6 +149,14 @@ function validateOptions (options: WASIOptions & { fs?: IFs | { promises: IFsPro
   }
 }
 
+function initWASI (this: WASI, setMemory: (m: WebAssembly.Memory) => void, wrap: _WASI): void {
+  this[kSetMemory] = setMemory;
+  (this as any).wasiImport = wrap
+  this[kStarted] = false
+  this[kExitCode] = 0
+  this[kInstance] = undefined
+}
+
 /** @public */
 export class WASI {
   /* addWorkerListener (worker: any): void {
@@ -177,41 +185,15 @@ export class WASI {
     }
   } */
 
-  private [kSetMemory]: (m: WebAssembly.Memory) => void
-  private [kStarted]: boolean
-  private [kExitCode]: number
+  private [kSetMemory]!: (m: WebAssembly.Memory) => void
+  private [kStarted]!: boolean
+  private [kExitCode]!: number
   private [kInstance]: WebAssembly.Instance | undefined
 
-  public readonly wasiImport: Record<string, any>
+  public readonly wasiImport!: Record<string, any>
 
   static createSync (options: SyncWASIOptions = kEmptyObject): WASI {
-    const {
-      args,
-      env,
-      preopens,
-      stdio
-    } = validateOptions(options)
-
-    const wrap = _WASI.createSync(
-      args,
-      env,
-      preopens,
-      stdio,
-      options.fs,
-      options.print,
-      options.printErr
-    )
-
-    const setMemory = wrap._setMemory!
-    delete wrap._setMemory
-    const _this = new WASI(
-      setMemory,
-      wrap
-    )
-
-    if (options.returnOnExit) { wrap.proc_exit = wasiReturnOnProcExit.bind(_this) }
-
-    return _this
+    return new WASI(options)
   }
 
   static async createAsync (options: AsyncWASIOptions = kEmptyObject): Promise<WASI> {
@@ -240,7 +222,8 @@ export class WASI {
 
     const setMemory = wrap._setMemory!
     delete wrap._setMemory
-    const _this = new WASI(
+    const _this = Object.create(WASI.prototype)
+    initWASI.call(_this,
       setMemory,
       wrap
     )
@@ -250,12 +233,28 @@ export class WASI {
     return _this
   }
 
-  private constructor (setMemory: (m: WebAssembly.Memory) => void, wrap: _WASI) {
-    this[kSetMemory] = setMemory
-    this.wasiImport = wrap
-    this[kStarted] = false
-    this[kExitCode] = 0
-    this[kInstance] = undefined
+  public constructor (options: SyncWASIOptions = kEmptyObject) {
+    const {
+      args,
+      env,
+      preopens,
+      stdio
+    } = validateOptions(options)
+
+    const wrap = _WASI.createSync(
+      args,
+      env,
+      preopens,
+      stdio,
+      options.fs,
+      options.print,
+      options.printErr
+    )
+
+    const setMemory = wrap._setMemory!
+    delete wrap._setMemory
+    initWASI.call(this, setMemory, wrap)
+    if (options.returnOnExit) { wrap.proc_exit = wasiReturnOnProcExit.bind(this) }
   }
 
   // Must not export _initialize, must export _start
