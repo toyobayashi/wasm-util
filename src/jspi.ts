@@ -8,7 +8,7 @@ function checkWebAssemblyFunction (): any {
     throw new Error(
       'WebAssembly.Function is not supported in this environment.' +
       ' If you are using V8 based browser like Chrome, try to specify' +
-      ' --js-flag="--wasm-staging --experimental-wasm-stack-switching"'
+      ' --js-flags="--wasm-staging --experimental-wasm-stack-switching"'
     )
   }
   return WebAssemblyFunction
