@@ -1,3 +1,4 @@
+/* eslint-disable spaced-comment */
 export function validateObject (value: unknown, name: string): void {
   if (value === null || typeof value !== 'object') {
     throw new TypeError(`${name} must be an object. Received ${value === null ? 'null' : typeof value}`)
@@ -66,7 +67,7 @@ export function wrapInstanceExports (exports: WebAssembly.Exports, mapFn: (value
 declare const __webpack_public_path__: string
 declare const __non_webpack_require__: any
 
-const _require = (function () {
+const _require = /*#__PURE__*/ (function () {
   let nativeRequire
 
   if (typeof __webpack_public_path__ !== 'undefined') {
@@ -82,7 +83,7 @@ const _require = (function () {
   return nativeRequire
 })()
 
-export const isMainThread: boolean = (function () {
+export const isMainThread: boolean = /*#__PURE__*/ (function () {
   let worker_threads
   try {
     worker_threads = _require('worker_threads')
@@ -95,7 +96,7 @@ export const isMainThread: boolean = (function () {
 
 export const postMsg = isMainThread
   ? () => {}
-  : (function () {
+  : /*#__PURE__*/ (function () {
       let worker_threads: undefined | typeof import('worker_threads')
       try {
         worker_threads = _require('worker_threads')
@@ -108,10 +109,15 @@ export const postMsg = isMainThread
       }
     })()
 
-export function sleepSync (this: any, delay: number): void {
+export function sleepBreakIf (delay: number, breakIf: () => boolean): boolean {
   const start = Date.now()
   const end = start + delay
+  let ret = false
   while (Date.now() < end) {
-    void this['']
+    if (breakIf()) {
+      ret = true
+      break
+    }
   }
+  return ret
 }

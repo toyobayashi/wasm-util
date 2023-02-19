@@ -11,7 +11,11 @@ import {
   WasiFdFlag,
   WasiFileType,
   WasiClockid,
-  WasiFstFlag
+  WasiFstFlag,
+  WasiEventType,
+  WasiSubclockflags,
+  Subscription,
+  FdEventSubscription
 } from './types'
 
 import type {
@@ -29,14 +33,12 @@ import type {
 import { concatBuffer, toFileStat, AsyncTable, SyncTable, FileDescriptorTable } from './fd'
 import type { FileDescriptor, StandardOutput } from './fd'
 import { WasiError } from './error'
-import { isMainThread, isPromiseLike, postMsg, sleepSync } from './util'
+import { isPromiseLike, sleepBreakIf } from './util'
 import { getRights } from './rights'
 import type { Memory } from '../memory'
 import { extendMemory } from '../memory'
 import type { Asyncify } from '../asyncify'
 import { wrapAsyncImport } from '../jspi'
-
-const util = { sleepSync }
 
 function copyMemory (targets: Uint8Array[], src: Uint8Array): number {
   if (targets.length === 0 || src.length === 0) return 0
@@ -1705,60 +1707,100 @@ export class WASI {
     let cur_timeout = BigInt(0)
     let has_timeout = 0
     let min_timeout = BigInt(0)
-    let sub
+    let sub: number | Subscription
 
+    const subscriptions: Subscription[] = Array(nsubscriptions)
     for (i = 0; i < nsubscriptions; i++) {
       sub = in_ptr + i * 48
-      const subType = Number(view.getBigUint64(sub + 8, true))
-      switch (subType) {
-        case 0: {
-          const clockFlags = Number(view.getBigUint64(sub + 40, true))
-          const clockTimeout = view.getBigUint64(sub + 24, true)
-          const userdata = view.getBigUint64(sub, true)
-          if (clockFlags === 1) {
+      const userdata = view.getBigUint64(sub, true)
+      const type = view.getUint8(sub + 8)
+      const clockIdOrFd = view.getUint32(sub + 16, true)
+      const timeout = view.getBigUint64(sub + 24, true)
+      const precision = view.getBigUint64(sub + 32, true)
+      const flags = view.getUint16(sub + 40, true)
+
+      subscriptions[i] = {
+        userdata,
+        type,
+        u: {
+          clock: {
+            clock_id: clockIdOrFd,
+            timeout,
+            precision,
+            flags
+          },
+          fd_readwrite: {
+            fd: clockIdOrFd
+          }
+        }
+      }
+    }
+
+    const fdevents: FdEventSubscription[] = []
+
+    for (i = 0; i < nsubscriptions; i++) {
+      sub = subscriptions[i]
+      switch (sub.type) {
+        case WasiEventType.CLOCK: {
+          if (sub.u.clock.flags === WasiSubclockflags.ABSTIME) {
             /* Convert absolute time to relative delay. */
             const now = BigInt(Date.now()) * BigInt(1000000)
-            cur_timeout = clockTimeout - now
+            cur_timeout = sub.u.clock.timeout - now
           } else {
-            cur_timeout = clockTimeout
+            cur_timeout = sub.u.clock.timeout
           }
 
           if (has_timeout === 0 || cur_timeout < min_timeout) {
             min_timeout = cur_timeout
-            timer_userdata = userdata
+            timer_userdata = sub.userdata
             has_timeout = 1
           }
           break
         }
-        case 1:
-        case 2:
+        case WasiEventType.FD_READ:
+        case WasiEventType.FD_WRITE:
+          fdevents.push(sub as FdEventSubscription)
           break
         default: return WasiErrno.EINVAL
       }
     }
+    if (fdevents.length > 0) {
+      for (i = 0; i < fdevents.length; i++) {
+        const fdevent = fdevents[i]
+        const event = out_ptr + 32 * i
+        view.setBigUint64(event, fdevent.userdata, true)
+        view.setUint32(event + 8, WasiErrno.ENOSYS, true)
+        view.setUint32(event + 12, fdevent.type, true)
+        view.setBigUint64(event + 16, BigInt(0), true)
+        view.setUint16(event + 24, 0, true)
+        view.setUint32(nevents, 1, true)
+      }
+      view.setUint32(nevents, fdevents.length, true)
+      return WasiErrno.ESUCCESS
+    }
     if (has_timeout) {
       const delay = Number(min_timeout / BigInt(1000000))
-      if (isMainThread || typeof SharedArrayBuffer !== 'function') {
-        util.sleepSync(delay)
-      } else {
-        const buf = new SharedArrayBuffer(4)
-        const arr = new Int32Array(buf)
-        postMsg({
-          __tybys_wasm_util_wasi__: {
-            type: 'set-timeout',
-            payload: {
-              buffer: buf,
-              delay
-            }
-          }
-        })
-        Atomics.wait(arr, 0, 0)
-      }
+      // if (isMainThread || typeof SharedArrayBuffer !== 'function') {
+      sleepBreakIf(delay, () => false)
+      // } else {
+      //   const buf = new SharedArrayBuffer(4)
+      //   const arr = new Int32Array(buf)
+      //   postMsg({
+      //     __tybys_wasm_util_wasi__: {
+      //       type: 'set-timeout',
+      //       payload: {
+      //         buffer: buf,
+      //         delay
+      //       }
+      //     }
+      //   })
+      //   Atomics.wait(arr, 0, 0)
+      // }
 
       const event = out_ptr
       view.setBigUint64(event, timer_userdata, true)
       view.setUint32(event + 8, WasiErrno.ESUCCESS, true)
-      view.setUint32(event + 12, 0, true)
+      view.setUint32(event + 12, WasiEventType.CLOCK, true)
       view.setUint32(nevents, 1, true)
     }
     return WasiErrno.ESUCCESS

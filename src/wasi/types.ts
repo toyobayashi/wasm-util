@@ -206,6 +206,34 @@ export const enum WasiFstFlag {
   SET_MTIM_NOW = (1 << 3)
 }
 
+export const enum WasiEventType {
+  CLOCK = 0,
+  FD_READ = 1,
+  FD_WRITE = 2
+}
+
+export const enum WasiSubclockflags {
+  ABSTIME = (1 << 0)
+}
+
+export interface Subscription<T extends WasiEventType = WasiEventType> {
+  userdata: bigint
+  type: T
+  u: {
+    clock: {
+      clock_id: number
+      timeout: bigint
+      precision: bigint
+      flags: WasiSubclockflags
+    }
+    fd_readwrite: {
+      fd: number
+    }
+  }
+}
+
+export type FdEventSubscription = Subscription<WasiEventType.FD_READ | WasiEventType.FD_WRITE>
+
 export type u8 = number
 export type u16 = number
 export type u32 = number

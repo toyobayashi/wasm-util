@@ -183,7 +183,7 @@ console.log(Date.now() - now >= 200)
 - [x] path_rename
 - [x] path_symlink
 - [x] path_unlink_file
-- [ ] ~~poll_oneoff~~
+- [x] poll_oneoff (timer only)
 - [x] proc_exit
 - [ ] ~~proc_raise~~
 - [x] sched_yield

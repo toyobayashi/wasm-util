@@ -151,7 +151,7 @@ function validateOptions (options: WASIOptions & { fs?: IFs | { promises: IFsPro
 
 /** @public */
 export class WASI {
-  static addWorkerListener (worker: any): void {
+  /* addWorkerListener (worker: any): void {
     if (worker && !worker._tybysWasmUtilWasiListener) {
       worker._tybysWasmUtilWasiListener = function _tybysWasmUtilWasiListener (e: any) {
         const data = e.data
@@ -175,7 +175,7 @@ export class WASI {
         worker.addEventListener('message', worker._tybysWasmUtilWasiListener, false)
       }
     }
-  }
+  } */
 
   private [kSetMemory]: (m: WebAssembly.Memory) => void
   private [kStarted]: boolean
