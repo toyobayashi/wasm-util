@@ -7,7 +7,7 @@ describe('thread', function () {
     let nextTid = 1
     const spawnThread = function (startArg, threadId) {
       const worker = new Worker('/test/thread/worker.js')
-      wasmUtil.WASI.addWorkerListener(worker)
+      // wasmUtil.WASI.addWorkerListener(worker)
 
       worker.onmessage = function (e) {
         if (e.data.cmd === 'loaded') {
