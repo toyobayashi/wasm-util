@@ -22,7 +22,7 @@ function fetchWasm (urlOrBuffer: string | URL, imports?: WebAssembly.Imports): P
 
 /** @public */
 export function load (
-  urlOrBuffer: string | URL | BufferSource,
+  wasmInput: string | URL | BufferSource | WebAssembly.Module,
   imports?: WebAssembly.Imports
 ): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   validateImports(imports)
@@ -30,26 +30,32 @@ export function load (
 
   let source: Promise<WebAssembly.WebAssemblyInstantiatedSource>
 
-  if (urlOrBuffer instanceof ArrayBuffer || ArrayBuffer.isView(urlOrBuffer)) {
-    return _WebAssembly.instantiate(urlOrBuffer, imports)
+  if (wasmInput instanceof ArrayBuffer || ArrayBuffer.isView(wasmInput)) {
+    return _WebAssembly.instantiate(wasmInput, imports)
   }
 
-  if (typeof urlOrBuffer !== 'string' && !(urlOrBuffer instanceof URL)) {
+  if (wasmInput instanceof _WebAssembly.Module) {
+    return _WebAssembly.instantiate(wasmInput, imports).then((instance) => {
+      return { instance, module: wasmInput }
+    })
+  }
+
+  if (typeof wasmInput !== 'string' && !(wasmInput instanceof URL)) {
     throw new TypeError('Invalid source')
   }
 
   if (typeof _WebAssembly.instantiateStreaming === 'function') {
     let responsePromise: Promise<Response>
     try {
-      responsePromise = fetch(urlOrBuffer)
+      responsePromise = fetch(wasmInput)
       source = _WebAssembly.instantiateStreaming(responsePromise, imports).catch(() => {
-        return fetchWasm(urlOrBuffer, imports)
+        return fetchWasm(wasmInput, imports)
       })
     } catch (_) {
-      source = fetchWasm(urlOrBuffer, imports)
+      source = fetchWasm(wasmInput, imports)
     }
   } else {
-    source = fetchWasm(urlOrBuffer, imports)
+    source = fetchWasm(wasmInput, imports)
   }
   return source
 }
@@ -57,7 +63,7 @@ export function load (
 /** @public */
 export function asyncifyLoad (
   asyncify: AsyncifyOptions,
-  urlOrBuffer: string | URL | BufferSource,
+  urlOrBuffer: string | URL | BufferSource | WebAssembly.Module,
   imports?: WebAssembly.Imports
 ): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
   validateImports(imports)
@@ -74,17 +80,22 @@ export function asyncifyLoad (
 
 /** @public */
 export function loadSync (
-  buffer: BufferSource,
+  wasmInput: BufferSource | WebAssembly.Module,
   imports?: WebAssembly.Imports
 ): WebAssembly.WebAssemblyInstantiatedSource {
-  if ((buffer instanceof ArrayBuffer) && !ArrayBuffer.isView(buffer)) {
-    throw new TypeError('Invalid source')
-  }
-
   validateImports(imports)
   imports = imports ?? {}
 
-  const module = new _WebAssembly.Module(buffer)
+  let module: WebAssembly.Module
+
+  if ((wasmInput instanceof ArrayBuffer) || ArrayBuffer.isView(wasmInput)) {
+    module = new _WebAssembly.Module(wasmInput)
+  } else if (wasmInput instanceof WebAssembly.Module) {
+    module = wasmInput
+  } else {
+    throw new TypeError('Invalid source')
+  }
+
   const instance = new _WebAssembly.Instance(module, imports)
   const source = { instance, module }
 
@@ -94,7 +105,7 @@ export function loadSync (
 /** @public */
 export function asyncifyLoadSync (
   asyncify: AsyncifyOptions,
-  buffer: BufferSource,
+  buffer: BufferSource | WebAssembly.Module,
   imports?: WebAssembly.Imports
 ): WebAssembly.WebAssemblyInstantiatedSource {
   validateImports(imports)
