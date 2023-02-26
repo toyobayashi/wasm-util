@@ -2,7 +2,7 @@
 
 describe('asyncify', function () {
   it('sleep 200ms', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
 
@@ -16,7 +16,7 @@ describe('asyncify', function () {
           })
         })
       },
-      wasi_snapshot_preview1: wasi.wasiImport
+      ...wasi.getImportObject()
     }
     const bytes = await (await fetch('/test/asyncify/asyncify.wasm')).arrayBuffer()
     const { instance } = await WebAssembly.instantiate(bytes, imports)

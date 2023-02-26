@@ -2,12 +2,10 @@
 
 describe('clock', function () {
   it('clock', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
-    const { instance } = await wasmUtil.load('/test/clock/clock.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/clock/clock.wasm', wasi.getImportObject())
 
     wasi.start(instance)
   })

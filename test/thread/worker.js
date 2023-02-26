@@ -38,10 +38,10 @@ if (ENVIRONMENT_IS_NODE) {
 importScripts('../../dist/wasm-util.js')
 
 async function instantiate (wasmMemory, request, tid, arg) {
-  const wasi = wasmUtil.WASI.createSync({ returnOnExit: true })
+  const wasi = new wasmUtil.WASI({ returnOnExit: true })
   const buffer = await (await (fetch(request))).arrayBuffer()
   let { instance } = await WebAssembly.instantiate(buffer, {
-    wasi_snapshot_preview1: wasi.wasiImport,
+    ...wasi.getImportObject(),
     env: {
       memory: wasmMemory,
     },

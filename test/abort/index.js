@@ -2,12 +2,10 @@
 
 describe('abort', function () {
   it('should throw RuntimeError', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
-    const { instance } = await wasmUtil.load('/test/abort/abort.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/abort/abort.wasm', wasi.getImportObject())
 
     assertThrow(() => {
       wasi.start(instance)

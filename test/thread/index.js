@@ -51,14 +51,14 @@ describe('thread', function () {
       shared: true
     })
 
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
     let { instance } = await wasmUtil.load('/test/thread/thread.wasm', {
+      ...wasi.getImportObject(),
       env: {
         memory: wasmMemory
       },
-      wasi_snapshot_preview1: wasi.wasiImport,
       wasi: {
         'thread-spawn' (startArg) {
           return spawnThread(startArg)

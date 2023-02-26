@@ -111,8 +111,8 @@ if (typeof __webpack_public_path__ !== 'undefined') {
   // webpack
   const wasmUrl = (await import('../build/a.wasm')).default
   const { WASI } = await import('@tybys/wasm-util')
-  const wasi = typeof WASI.createSync === 'function' ? WASI.createSync(wasiOptions) : new WASI(wasiOptions)
-  const { instance } = await load(wasmUrl, { ...imports, wasi_snapshot_preview1: wasi.wasiImport })
+  const wasi = new WASI(wasiOptions)
+  const { instance } = await load(wasmUrl, { ...imports, ...wasi.getImportObject() })
   wasm = instance.exports
   await wasi.start(instance)
 } else {
@@ -120,8 +120,8 @@ if (typeof __webpack_public_path__ !== 'undefined') {
 
   const url = new URL('../build/a.wasm', import.meta.url)
   const { WASI } = isNodeJs ? await import('node:wasi') : await import('@tybys/wasm-util')
-  const wasi = typeof WASI.createSync === 'function' ? WASI.createSync(wasiOptions) : new WASI(wasiOptions)
-  const { instance } = await load(isNodeJs ? await (await import('node:fs/promises')).readFile(url) : url, { ...imports, wasi_snapshot_preview1: wasi.wasiImport })
+  const wasi = new WASI(wasiOptions)
+  const { instance } = await load(isNodeJs ? await (await import('node:fs/promises')).readFile(url) : url, { ...imports, ...wasi.getImportObject() })
   wasm = instance.exports
   await wasi.start(instance)
 }

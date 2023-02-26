@@ -4,12 +4,10 @@ describe('assert', function () {
   
 
   it('assert false', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
-    const { instance } = await wasmUtil.load('/test/assert/assert_false.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/assert/assert_false.wasm', wasi.getImportObject())
 
     assertThrow(() => {
       wasi.start(instance)
@@ -17,12 +15,10 @@ describe('assert', function () {
   })
 
   it('assert true', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
-    const { instance } = await wasmUtil.load('/test/assert/assert_true.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/assert/assert_true.wasm', wasi.getImportObject())
 
     wasi.start(instance)
   })

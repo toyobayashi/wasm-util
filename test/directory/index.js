@@ -6,16 +6,14 @@ describe('directory', function () {
     const vol = memfs.Volume.fromJSON({
       '/fopen-directory-parent-directory.dir': null
     })
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true,
       preopens: {
         'fopen-directory-parent-directory.dir': 'fopen-directory-parent-directory.dir'
       },
       fs: memfs.createFsFromVolume(vol)
     })
-    const { instance } = await wasmUtil.load('/test/directory/directory.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/directory/directory.wasm', wasi.getImportObject())
 
     wasi.start(instance)
   })
@@ -25,7 +23,7 @@ describe('directory', function () {
       '/fopen-directory-parent-directory.dir': null
     })
     const asyncify = new wasmUtil.Asyncify()
-    const wasi = await wasmUtil.WASI.createAsync({
+    const wasi = await wasmUtil.createAsyncWASI({
       returnOnExit: true,
       preopens: {
         'fopen-directory-parent-directory.dir': 'fopen-directory-parent-directory.dir'
@@ -33,9 +31,7 @@ describe('directory', function () {
       fs: memfs.createFsFromVolume(vol),
       asyncify: asyncify
     })
-    const { instance } = await wasmUtil.load('/test/directory/directory_asyncify.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/directory/directory_asyncify.wasm', wasi.getImportObject())
     const wrappedInstance = asyncify.init(instance.exports.memory, instance, {
       wrapExports: ['_start']
     })
@@ -47,16 +43,14 @@ describe('directory', function () {
     const vol = memfs.Volume.fromJSON({
       '/fopen-directory-parent-directory.dir': null
     })
-    const wasi = await wasmUtil.WASI.createAsync({
+    const wasi = await wasmUtil.createAsyncWASI({
       returnOnExit: true,
       preopens: {
         'fopen-directory-parent-directory.dir': 'fopen-directory-parent-directory.dir'
       },
       fs: memfs.createFsFromVolume(vol)
     })
-    const { instance } = await wasmUtil.load('/test/directory/directory_jspi.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/directory/directory_jspi.wasm', wasi.getImportObject())
     const wrappedInstance = { exports: wasmUtil.wrapExports(instance.exports, ['_start']) }
 
     await wasi.start(wrappedInstance)

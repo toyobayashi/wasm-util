@@ -2,15 +2,13 @@
 
 describe('getenv', function () {
   it('getenv', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true,
       env: {
         PRESENT: '1'
       }
     })
-    const { instance } = await wasmUtil.load('/test/getenv/getenv.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/getenv/getenv.wasm', wasi.getImportObject())
 
     wasi.start(instance)
   })

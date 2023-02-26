@@ -1,4 +1,4 @@
-import { WASI as _WASI } from './preview1'
+import { WASI as WASIPreview1 } from './preview1'
 import type { Preopen } from './preview1'
 import type { exitcode } from './types'
 
@@ -7,7 +7,8 @@ import {
   validateArray,
   validateBoolean,
   validateFunction,
-  validateUndefined
+  validateUndefined,
+  validateString
 } from './util'
 import type { IFs, IFsPromises } from './fs'
 import type { Asyncify } from '../asyncify'
@@ -18,6 +19,7 @@ const kExitCode = Symbol('kExitCode')
 const kSetMemory = Symbol('kSetMemory')
 const kStarted = Symbol('kStarted')
 const kInstance = Symbol('kInstance')
+const kBindingName = Symbol('kBindingName')
 
 function setupInstance (self: WASI, instance: WebAssembly.Instance): void {
   validateObject(instance, 'instance')
@@ -29,6 +31,7 @@ function setupInstance (self: WASI, instance: WebAssembly.Instance): void {
 
 /** @public */
 export interface WASIOptions {
+  version?: 'unstable' | 'preview1'
   args?: string[] | undefined
   env?: Record<string, string> | undefined
   preopens?: Record<string, string> | undefined
@@ -68,16 +71,34 @@ export interface AsyncWASIOptions extends WASIOptions {
   asyncify?: Asyncify
 }
 
-// /** @public */
-// export type WasiSnapshotPreview1 = Omit<_WASI, '_setMemory'>
-
-function validateOptions (options: WASIOptions & { fs?: IFs | { promises: IFsPromises } }): {
+function validateOptions (this: WASI, options: WASIOptions & { fs?: IFs | { promises: IFsPromises } }): {
   args: string[]
   env: string[]
   preopens: Preopen[]
   stdio: readonly [0, 1, 2]
+  _WASI: any
 } {
   validateObject(options, 'options')
+
+  let _WASI: any
+  if (options.version !== undefined) {
+    validateString(options.version, 'options.version')
+    switch (options.version) {
+      case 'unstable':
+        _WASI = WASIPreview1
+        this[kBindingName] = 'wasi_unstable'
+        break
+      case 'preview1':
+        _WASI = WASIPreview1
+        this[kBindingName] = 'wasi_snapshot_preview1'
+        break
+      default:
+        throw new TypeError(`unsupported WASI version "${options.version as string}"`)
+    }
+  } else {
+    _WASI = WASIPreview1
+    this[kBindingName] = 'wasi_snapshot_preview1'
+  }
 
   if (options.args !== undefined) {
     validateArray(options.args, 'options.args')
@@ -145,11 +166,12 @@ function validateOptions (options: WASIOptions & { fs?: IFs | { promises: IFsPro
     args,
     env,
     preopens,
-    stdio
+    stdio,
+    _WASI
   }
 }
 
-function initWASI (this: WASI, setMemory: (m: WebAssembly.Memory) => void, wrap: _WASI): void {
+function initWASI (this: WASI, setMemory: (m: WebAssembly.Memory) => void, wrap: any): void {
   this[kSetMemory] = setMemory;
   (this as any).wasiImport = wrap
   this[kStarted] = false
@@ -189,57 +211,18 @@ export class WASI {
   private [kStarted]!: boolean
   private [kExitCode]!: number
   private [kInstance]: WebAssembly.Instance | undefined
+  private [kBindingName]!: string
 
   public readonly wasiImport!: Record<string, any>
-
-  static createSync (options: SyncWASIOptions = kEmptyObject): WASI {
-    return new WASI(options)
-  }
-
-  static async createAsync (options: AsyncWASIOptions = kEmptyObject): Promise<WASI> {
-    const {
-      args,
-      env,
-      preopens,
-      stdio
-    } = validateOptions(options)
-
-    if (options.asyncify !== undefined) {
-      validateObject(options.asyncify, 'options.asyncify')
-      validateFunction(options.asyncify.wrapImportFunction, 'options.asyncify.wrapImportFunction')
-    }
-
-    const wrap = await _WASI.createAsync(
-      args,
-      env,
-      preopens,
-      stdio,
-      options.fs,
-      options.print,
-      options.printErr,
-      options.asyncify
-    )
-
-    const setMemory = wrap._setMemory!
-    delete wrap._setMemory
-    const _this = Object.create(WASI.prototype)
-    initWASI.call(_this,
-      setMemory,
-      wrap
-    )
-
-    if (options.returnOnExit) { wrap.proc_exit = wasiReturnOnProcExit.bind(_this) }
-
-    return _this
-  }
 
   public constructor (options: SyncWASIOptions = kEmptyObject) {
     const {
       args,
       env,
       preopens,
-      stdio
-    } = validateOptions(options)
+      stdio,
+      _WASI
+    } = validateOptions.call(this, options)
 
     const wrap = _WASI.createSync(
       args,
@@ -311,10 +294,53 @@ export class WASI {
       return (_initialize as () => any)()
     }
   }
+
+  getImportObject (): Record<string, Record<string, any>> {
+    return { [this[kBindingName]]: this.wasiImport }
+  }
 }
 
 function wasiReturnOnProcExit (this: WASI, rval: exitcode): exitcode {
   this[kExitCode] = rval
   // eslint-disable-next-line @typescript-eslint/no-throw-literal
   throw kExitCode
+}
+
+/** @public */
+export async function createAsyncWASI (options: AsyncWASIOptions = kEmptyObject): Promise<WASI> {
+  const _this = Object.create(WASI.prototype)
+  const {
+    args,
+    env,
+    preopens,
+    stdio,
+    _WASI
+  } = validateOptions.call(_this, options)
+
+  if (options.asyncify !== undefined) {
+    validateObject(options.asyncify, 'options.asyncify')
+    validateFunction(options.asyncify.wrapImportFunction, 'options.asyncify.wrapImportFunction')
+  }
+
+  const wrap = await _WASI.createAsync(
+    args,
+    env,
+    preopens,
+    stdio,
+    options.fs,
+    options.print,
+    options.printErr,
+    options.asyncify
+  )
+
+  const setMemory = wrap._setMemory!
+  delete wrap._setMemory
+  initWASI.call(_this,
+    setMemory,
+    wrap
+  )
+
+  if (options.returnOnExit) { wrap.proc_exit = wasiReturnOnProcExit.bind(_this) }
+
+  return _this
 }

@@ -2,7 +2,7 @@
 
 describe('memory', function () {
   it('import memory', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
 
@@ -26,7 +26,7 @@ describe('memory', function () {
           assert(view.getInt32(ptr, true) === 233)
         }
       },
-      wasi_snapshot_preview1: wasi.wasiImport
+      ...wasi.getImportObject()
     })
 
     const exportsProxy = new Proxy(instance.exports, {
@@ -47,7 +47,7 @@ describe('memory', function () {
   })
 
   it('export memory', async function () {
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
 
@@ -63,7 +63,7 @@ describe('memory', function () {
           assert(view.getInt32(ptr, true) === 233)
         }
       },
-      wasi_snapshot_preview1: wasi.wasiImport
+      ...wasi.getImportObject()
     })
 
     const memory = instance.exports.memory

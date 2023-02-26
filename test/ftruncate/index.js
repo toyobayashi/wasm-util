@@ -6,16 +6,14 @@ describe('ftruncate', function () {
     const vol = memfs.Volume.fromJSON({
       '/ftruncate.dir': null
     })
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true,
       preopens: {
         'ftruncate.dir': 'ftruncate.dir'
       },
       fs: memfs.createFsFromVolume(vol)
     })
-    const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate.wasm', wasi.getImportObject())
 
     wasi.start(instance)
   })
@@ -25,7 +23,7 @@ describe('ftruncate', function () {
       '/ftruncate.dir': null
     })
     const asyncify = new wasmUtil.Asyncify()
-    const wasi = await wasmUtil.WASI.createAsync({
+    const wasi = await wasmUtil.createAsyncWASI({
       returnOnExit: true,
       preopens: {
         'ftruncate.dir': 'ftruncate.dir'
@@ -33,9 +31,7 @@ describe('ftruncate', function () {
       fs: memfs.createFsFromVolume(vol),
       asyncify: asyncify
     })
-    const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate_asyncify.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate_asyncify.wasm', wasi.getImportObject())
     const wrappedInstance = asyncify.init(instance.exports.memory, instance, {})
 
     await wasi.start(wrappedInstance)
@@ -45,16 +41,14 @@ describe('ftruncate', function () {
     const vol = memfs.Volume.fromJSON({
       '/ftruncate.dir': null
     })
-    const wasi = await wasmUtil.WASI.createAsync({
+    const wasi = await wasmUtil.createAsyncWASI({
       returnOnExit: true,
       preopens: {
         'ftruncate.dir': 'ftruncate.dir'
       },
       fs: memfs.createFsFromVolume(vol)
     })
-    const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate_jspi.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/ftruncate/ftruncate_jspi.wasm', wasi.getImportObject())
     const wrappedInstance = Object.create(WebAssembly.Instance.prototype)
     Object.defineProperty(wrappedInstance, 'exports', { value: wasmUtil.wrapExports(instance.exports, ['_start']) })
 

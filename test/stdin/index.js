@@ -7,12 +7,10 @@ describe('stdin', function () {
     window.prompt = function (message, defaultValue) {
       return prompt.call(window, 'Test stdin', 'Hello, stdin!')
     }
-    const wasi = wasmUtil.WASI.createSync({
+    const wasi = new wasmUtil.WASI({
       returnOnExit: true
     })
-    const { instance } = await wasmUtil.load('/test/stdin/stdin.wasm', {
-      wasi_snapshot_preview1: wasi.wasiImport
-    })
+    const { instance } = await wasmUtil.load('/test/stdin/stdin.wasm', wasi.getImportObject())
 
     assert(0 === wasi.start(instance))
     window.prompt = prompt
