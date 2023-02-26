@@ -25,7 +25,7 @@ const fs = createFsFromVolume(Volume.from({
   '/home/wasi': null
 }))
 
-const wasi = WASI.createSync({
+const wasi = new WASI({
   args: ['chrome', 'file.wasm'],
   env: {
     NODE_ENV: 'development',
