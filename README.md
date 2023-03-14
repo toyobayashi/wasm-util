@@ -21,7 +21,7 @@ You can use `memfs-browser` to provide filesystem capability.
 import { load, WASI } from '@tybys/wasm-util'
 import { Volume, createFsFromVolume } from 'memfs-browser'
 
-const fs = createFsFromVolume(Volume.from({
+const fs = createFsFromVolume(Volume.fromJSON({
   '/home/wasi': null
 }))
 
