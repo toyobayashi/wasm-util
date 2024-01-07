@@ -1829,7 +1829,16 @@ export class WASI {
       }
       buf_len = Number(buf_len)
 
-      const { HEAPU8 } = getMemory(this)
+      const { HEAPU8, view } = getMemory(this)
+      if ((typeof SharedArrayBuffer === 'function' && HEAPU8.buffer instanceof SharedArrayBuffer) ||
+          (Object.prototype.toString.call(HEAPU8.buffer) === '[object SharedArrayBuffer]')) {
+        for (let i = buf; i < buf + buf_len; ++i) {
+          view.setUint8(i, Math.floor(Math.random() * 256))
+        }
+
+        return WasiErrno.ESUCCESS
+      }
+
       let pos: number
       const stride = 65536
 
