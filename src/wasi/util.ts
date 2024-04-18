@@ -121,3 +121,9 @@ export function sleepBreakIf (delay: number, breakIf: () => boolean): boolean {
   }
   return ret
 }
+
+export function unsharedSlice (view: Uint8Array, start: number, end?: number): Uint8Array {
+  return ((typeof SharedArrayBuffer === 'function' && view.buffer instanceof SharedArrayBuffer) || (Object.prototype.toString.call(view.buffer.constructor) === '[object SharedArrayBuffer]'))
+    ? view.slice(start, end)
+    : view.subarray(start, end)
+}

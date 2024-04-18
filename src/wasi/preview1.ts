@@ -33,7 +33,7 @@ import type {
 import { concatBuffer, toFileStat, AsyncTable, SyncTable, FileDescriptorTable } from './fd'
 import type { FileDescriptor, StandardOutput } from './fd'
 import { WasiError } from './error'
-import { isPromiseLike, sleepBreakIf } from './util'
+import { isPromiseLike, sleepBreakIf, unsharedSlice } from './util'
 import { getRights } from './rights'
 import type { Memory } from '../memory'
 import { extendMemory } from '../memory'
@@ -867,7 +867,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_CREATE_DIRECTORY, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as IFs
@@ -884,7 +884,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_CREATE_DIRECTORY, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as { promises: IFsPromises }
@@ -906,7 +906,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         const fs = getFs(this) as IFs
         pathString = resolve(fileDescriptor.realPath, pathString)
@@ -931,7 +931,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         const fs = getFs(this) as { promises: IFsPromises }
         pathString = resolve(fileDescriptor.realPath, pathString)
@@ -963,7 +963,7 @@ export class WASI {
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
         const fs = getFs(this) as IFs
-        const resolvedPath = resolvePathSync(fs, fileDescriptor, decoder.decode(HEAPU8.subarray(path, path + path_len)), flags)
+        const resolvedPath = resolvePathSync(fs, fileDescriptor, decoder.decode(unsharedSlice(HEAPU8, path, path + path_len)), flags)
         if ((fst_flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
           atim = BigInt(Date.now() * 1000000)
         }
@@ -988,7 +988,7 @@ export class WASI {
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
         const fs = getFs(this) as { promises: IFsPromises }
-        const resolvedPath = await resolvePathAsync(fs, fileDescriptor, decoder.decode(HEAPU8.subarray(path, path + path_len)), flags)
+        const resolvedPath = await resolvePathAsync(fs, fileDescriptor, decoder.decode(unsharedSlice(HEAPU8, path, path + path_len)), flags)
         if ((fst_flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
           atim = BigInt(Date.now() * 1000000)
         }
@@ -1022,8 +1022,8 @@ export class WASI {
         }
         const { HEAPU8 } = getMemory(this)
         const fs = getFs(this) as IFs
-        const resolvedOldPath = resolvePathSync(fs, oldWrap, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)), old_flags)
-        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
+        const resolvedOldPath = resolvePathSync(fs, oldWrap, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)), old_flags)
+        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
 
         fs.linkSync(resolvedOldPath, resolvedNewPath)
 
@@ -1048,8 +1048,8 @@ export class WASI {
         }
         const { HEAPU8 } = getMemory(this)
         const fs = getFs(this) as { promises: IFsPromises }
-        const resolvedOldPath = await resolvePathAsync(fs, oldWrap, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)), old_flags)
-        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
+        const resolvedOldPath = await resolvePathAsync(fs, oldWrap, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)), old_flags)
+        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
 
         await fs.promises.link(resolvedOldPath, resolvedNewPath)
 
@@ -1142,7 +1142,7 @@ export class WASI {
         const fileDescriptor = wasi.fds.get(dirfd, neededBase, neededInheriting)
         const memory = getMemory(this)
         const HEAPU8 = memory.HEAPU8
-        const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        const pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
         const fs = getFs(this) as IFs
         const resolved_path = resolvePathSync(fs, fileDescriptor, pathString, dirflags)
         const r = fs.openSync(resolved_path, flagsRes, 0o666)
@@ -1194,7 +1194,7 @@ export class WASI {
         const fileDescriptor = wasi.fds.get(dirfd, neededBase, neededInheriting)
         const memory = getMemory(this)
         const HEAPU8 = memory.HEAPU8
-        const pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        const pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
         const fs = getFs(this) as { promises: IFsPromises }
         const resolved_path = await resolvePathAsync(fs, fileDescriptor, pathString, dirflags)
         const r = await fs.promises.open(resolved_path, flagsRes, 0o666)
@@ -1233,7 +1233,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_READLINK, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as IFs
@@ -1260,7 +1260,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_READLINK, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as { promises: IFsPromises }
@@ -1288,7 +1288,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_REMOVE_DIRECTORY, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as IFs
@@ -1306,7 +1306,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_REMOVE_DIRECTORY, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as { promises: IFsPromises }
@@ -1336,8 +1336,8 @@ export class WASI {
           newWrap = wasi.fds.get(new_fd, WasiRights.PATH_RENAME_TARGET, BigInt(0))
         }
         const { HEAPU8 } = getMemory(this)
-        const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)))
-        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
+        const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)))
+        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
         const fs = getFs(this) as IFs
         fs.renameSync(resolvedOldPath, resolvedNewPath)
 
@@ -1361,8 +1361,8 @@ export class WASI {
           newWrap = wasi.fds.get(new_fd, WasiRights.PATH_RENAME_TARGET, BigInt(0))
         }
         const { HEAPU8 } = getMemory(this)
-        const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len)))
-        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len)))
+        const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)))
+        const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
         const fs = getFs(this) as { promises: IFsPromises }
         await fs.promises.rename(resolvedOldPath, resolvedNewPath)
         return WasiErrno.ESUCCESS
@@ -1383,8 +1383,8 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_SYMLINK, BigInt(0))
-        const oldPath = decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len))
-        let newPath = decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len))
+        const oldPath = decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len))
+        let newPath = decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len))
 
         newPath = resolve(fileDescriptor.realPath, newPath)
         const fs = getFs(this) as IFs
@@ -1404,8 +1404,8 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_SYMLINK, BigInt(0))
-        const oldPath = decoder.decode(HEAPU8.subarray(old_path, old_path + old_path_len))
-        let newPath = decoder.decode(HEAPU8.subarray(new_path, new_path + new_path_len))
+        const oldPath = decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len))
+        let newPath = decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len))
 
         newPath = resolve(fileDescriptor.realPath, newPath)
         const fs = getFs(this) as { promises: IFsPromises }
@@ -1427,7 +1427,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_UNLINK_FILE, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as IFs
@@ -1445,7 +1445,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_UNLINK_FILE, BigInt(0))
-        let pathString = decoder.decode(HEAPU8.subarray(path, path + path_len))
+        let pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
 
         pathString = resolve(fileDescriptor.realPath, pathString)
         const fs = getFs(this) as { promises: IFsPromises }
