@@ -96,6 +96,7 @@ const vol = Volume.fromJSON({
 }, '/')
 
 const wasiOptions = {
+  version: 'preview1',
   args: ['node', 'a.wasm'],
   env: {
     NODE_ENV: 'development',
