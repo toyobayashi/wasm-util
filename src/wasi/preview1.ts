@@ -464,7 +464,13 @@ export class WASI {
 
         let nread: number = 0
 
-        const buffer = new Uint8Array(totalSize)
+        const buffer = (() => {
+          try {
+            return new Uint8Array(new SharedArrayBuffer(totalSize))
+          } catch (_) {
+            return new Uint8Array(totalSize)
+          }
+        })()
         ;(buffer as any)._isBuffer = true
         const fs = getFs(this) as IFs
         const bytesRead = fs.readSync(fileDescriptor.fd as number, buffer, 0, buffer.length, Number(offset))
@@ -585,7 +591,13 @@ export class WASI {
           buffer = readStdin()
           nread = buffer ? copyMemory(ioVecs, buffer) : 0
         } else {
-          buffer = new Uint8Array(totalSize)
+          buffer = (() => {
+            try {
+              return new Uint8Array(new SharedArrayBuffer(totalSize))
+            } catch (_) {
+              return new Uint8Array(totalSize)
+            }
+          })()
           ;(buffer as any)._isBuffer = true
           const fs = getFs(this) as IFs
           const bytesRead = fs.readSync(fileDescriptor.fd as number, buffer, 0, buffer.length, Number(fileDescriptor.pos))
