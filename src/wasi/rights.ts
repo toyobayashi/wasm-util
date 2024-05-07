@@ -30,7 +30,8 @@ export const RIGHTS_ALL = WasiRights.FD_DATASYNC |
                           WasiRights.PATH_UNLINK_FILE |
                           WasiRights.PATH_REMOVE_DIRECTORY |
                           WasiRights.POLL_FD_READWRITE |
-                          WasiRights.SOCK_SHUTDOWN
+                          WasiRights.SOCK_SHUTDOWN |
+                          WasiRights.SOCK_ACCEPT
 
 export const BLOCK_DEVICE_BASE = RIGHTS_ALL
 export const BLOCK_DEVICE_INHERITING = RIGHTS_ALL

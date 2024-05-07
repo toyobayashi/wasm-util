@@ -171,11 +171,24 @@ const encoder = /*#__PURE__*/ new TextEncoder()
 // eslint-disable-next-line spaced-comment
 const decoder = /*#__PURE__*/ new TextDecoder()
 
+const INT64_MAX = (BigInt(1) << BigInt(63)) - BigInt(1)
+
 function readStdin (): Uint8Array {
   const value = window.prompt()
   if (value === null) return new Uint8Array()
   const buffer = new TextEncoder().encode(value + '\n')
   return buffer
+}
+
+function validateFstFlagsOrReturn (flags: number): boolean {
+  return (
+    Boolean((flags) & ~(WasiFstFlag.SET_ATIM | WasiFstFlag.SET_ATIM_NOW |
+              WasiFstFlag.SET_MTIM | WasiFstFlag.SET_MTIM_NOW)) ||
+    ((flags) & (WasiFstFlag.SET_ATIM | WasiFstFlag.SET_ATIM_NOW)) ===
+      (WasiFstFlag.SET_ATIM | WasiFstFlag.SET_ATIM_NOW) ||
+    ((flags) & (WasiFstFlag.SET_MTIM | WasiFstFlag.SET_MTIM_NOW)) ===
+      (WasiFstFlag.SET_MTIM | WasiFstFlag.SET_MTIM_NOW)
+  )
 }
 
 export class WASI {
@@ -419,6 +432,9 @@ export class WASI {
 
     defineImport('fd_filestat_set_times',
       function fd_filestat_set_times (fd: fd, atim: bigint, mtim: bigint, flags: WasiFstFlag): WasiErrno {
+        if (validateFstFlagsOrReturn(flags)) {
+          return WasiErrno.EINVAL
+        }
         const {
           fileDescriptor,
           atim: atimRes,
@@ -429,6 +445,9 @@ export class WASI {
         return WasiErrno.ESUCCESS
       },
       async function fd_filestat_set_times (fd: fd, atim: bigint, mtim: bigint, flags: WasiFstFlag): Promise<WasiErrno> {
+        if (validateFstFlagsOrReturn(flags)) {
+          return WasiErrno.EINVAL
+        }
         const {
           fileDescriptor,
           atim: atimRes,
@@ -445,13 +464,18 @@ export class WASI {
       function fd_pread (fd: fd, iovs: Pointer, iovslen: size, offset: filesize, size: Pointer<size>): WasiErrno {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ | WasiRights.FD_SEEK, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         let totalSize = 0
         const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
@@ -482,13 +506,18 @@ export class WASI {
       async function (fd: fd, iovs: Pointer, iovslen: size, offset: filesize, size: Pointer<size>): Promise<WasiErrno> {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ | WasiRights.FD_SEEK, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         let totalSize = 0
         const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
@@ -516,13 +545,18 @@ export class WASI {
       function fd_pwrite (fd: fd, iovs: Pointer, iovslen: size, offset: filesize, size: Pointer<size>): WasiErrno {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE | WasiRights.FD_SEEK, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         const buffer = concatBuffer(Array.from({ length: Number(iovslen) }, (_, i) => {
           const offset = (iovs as number) + (i * 8)
@@ -539,13 +573,18 @@ export class WASI {
       async function fd_pwrite (fd: fd, iovs: Pointer, iovslen: size, offset: filesize, size: Pointer<size>): Promise<WasiErrno> {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE | WasiRights.FD_SEEK, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         const buffer = concatBuffer(Array.from({ length: Number(iovslen) }, (_, i) => {
           const offset = (iovs as number) + (i * 8)
@@ -565,13 +604,18 @@ export class WASI {
       function fd_read (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         let totalSize = 0
         const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
@@ -611,13 +655,18 @@ export class WASI {
       async function fd_read (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): Promise<WasiErrno> {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         let totalSize = 0
         const ioVecs = Array.from({ length: Number(iovslen) }, (_, i) => {
@@ -811,13 +860,18 @@ export class WASI {
       function fd_write (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): WasiErrno {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         const buffer = concatBuffer(Array.from({ length: Number(iovslen) }, (_, i) => {
           const offset = (iovs as number) + (i * 8)
@@ -840,13 +894,18 @@ export class WASI {
       async function fd_write (fd: fd, iovs: Pointer, iovslen: size, size: Pointer<size>): Promise<WasiErrno> {
         iovs = Number(iovs)
         size = Number(size)
-        if (iovs === 0 || size === 0) {
+        if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
         const { HEAPU8, view } = getMemory(this)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE, BigInt(0))
+
+        if (!iovslen) {
+          view.setUint32(size, 0, true)
+          return WasiErrno.ESUCCESS
+        }
 
         const buffer = concatBuffer(Array.from({ length: Number(iovslen) }, (_, i) => {
           const offset = (iovs as number) + (i * 8)
@@ -965,15 +1024,15 @@ export class WASI {
         path = Number(path)
         path_len = Number(path_len)
         if (path === 0) return WasiErrno.EINVAL
-        if ((fst_flags) & ~(WasiFstFlag.SET_ATIM |
-                            WasiFstFlag.SET_ATIM_NOW |
-                            WasiFstFlag.SET_MTIM |
-                            WasiFstFlag.SET_MTIM_NOW)) {
-          return WasiErrno.EINVAL
-        }
+
         const { HEAPU8 } = getMemory(this)
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
+
+        if (validateFstFlagsOrReturn(fst_flags)) {
+          return WasiErrno.EINVAL
+        }
+
         const fs = getFs(this) as IFs
         const resolvedPath = resolvePathSync(fs, fileDescriptor, decoder.decode(unsharedSlice(HEAPU8, path, path + path_len)), flags)
         if ((fst_flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
@@ -990,15 +1049,15 @@ export class WASI {
         path = Number(path)
         path_len = Number(path_len)
         if (path === 0) return WasiErrno.EINVAL
-        if ((fst_flags) & ~(WasiFstFlag.SET_ATIM |
-                            WasiFstFlag.SET_ATIM_NOW |
-                            WasiFstFlag.SET_MTIM |
-                            WasiFstFlag.SET_MTIM_NOW)) {
-          return WasiErrno.EINVAL
-        }
+
         const { HEAPU8 } = getMemory(this)
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
+
+        if (validateFstFlagsOrReturn(fst_flags)) {
+          return WasiErrno.EINVAL
+        }
+
         const fs = getFs(this) as { promises: IFsPromises }
         const resolvedPath = await resolvePathAsync(fs, fileDescriptor, decoder.decode(unsharedSlice(HEAPU8, path, path + path_len)), flags)
         if ((fst_flags & WasiFstFlag.SET_ATIM_NOW) === WasiFstFlag.SET_ATIM_NOW) {
@@ -1255,7 +1314,7 @@ export class WASI {
         if (len >= buf_len) return WasiErrno.ENOBUFS
         HEAPU8.set(linkData.subarray(0, len), buf)
         HEAPU8[buf + len] = 0
-        view.setUint32(bufused, len + 1, true)
+        view.setUint32(bufused, len, true)
 
         return WasiErrno.ESUCCESS
       },
@@ -1282,7 +1341,7 @@ export class WASI {
         if (len >= buf_len) return WasiErrno.ENOBUFS
         HEAPU8.set(linkData.subarray(0, len), buf)
         HEAPU8[buf + len] = 0
-        view.setUint32(bufused, len + 1, true)
+        view.setUint32(bufused, len, true)
 
         return WasiErrno.ESUCCESS
       },
@@ -1655,7 +1714,7 @@ export class WASI {
     const { view } = getMemory(this)
     // preopen type is dir(0)
     view.setUint32(prestat, 0, true)
-    view.setUint32(prestat + 4, encoder.encode(fileDescriptor.path).length + 1, true)
+    view.setUint32(prestat + 4, encoder.encode(fileDescriptor.path).length, true)
     return WasiErrno.ESUCCESS
   })
 
@@ -1669,7 +1728,7 @@ export class WASI {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
     if (fileDescriptor.preopen !== 1) return WasiErrno.EBADF
-    const buffer = encoder.encode(fileDescriptor.path + '\0')
+    const buffer = encoder.encode(fileDescriptor.path)
     const size = buffer.length
     if (size > path_len) return WasiErrno.ENOBUFS
     const { HEAPU8 } = getMemory(this)
@@ -1885,6 +1944,10 @@ export class WASI {
   })
 
   sock_shutdown = syscallWrap(this, 'sock_shutdown', function (): WasiErrno {
+    return WasiErrno.ENOTSUP
+  })
+
+  sock_accept = syscallWrap(this, 'sock_accept', function (): WasiErrno {
     return WasiErrno.ENOTSUP
   })
 }
