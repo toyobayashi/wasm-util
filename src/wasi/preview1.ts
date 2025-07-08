@@ -1218,7 +1218,13 @@ export class WASI {
         const resolved_path = resolvePathSync(fs, fileDescriptor, pathString, dirflags)
         const r = fs.openSync(resolved_path, flagsRes, 0o666)
         const filetype = (wasi.fds as SyncTable).getFileTypeByFd(r)
-        if ((o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0 && filetype !== WasiFileType.DIRECTORY) {
+        if (
+          (filetype !== WasiFileType.DIRECTORY) &&
+          (
+            (o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0 ||
+            (resolved_path.endsWith('/'))
+          )
+        ) {
           return WasiErrno.ENOTDIR
         }
         const { base: max_base, inheriting: max_inheriting } = getRights(wasi.fds.stdio, r, flagsRes, filetype)
@@ -1455,6 +1461,9 @@ export class WASI {
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_SYMLINK, BigInt(0))
         const oldPath = decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len))
+        if (oldPath.length > 0 && oldPath[0] === '/') {
+          return WasiErrno.EPERM
+        }
         let newPath = decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len))
 
         newPath = resolve(fileDescriptor.realPath, newPath)
