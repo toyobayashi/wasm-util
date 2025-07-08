@@ -21,14 +21,6 @@ const kStarted = Symbol('kStarted')
 const kInstance = Symbol('kInstance')
 const kBindingName = Symbol('kBindingName')
 
-function setupInstance (self: WASI, instance: WebAssembly.Instance): void {
-  validateObject(instance, 'instance')
-  validateObject(instance.exports, 'instance.exports')
-
-  self[kInstance] = instance
-  self[kSetMemory](instance.exports.memory as any)
-}
-
 /** @public */
 export interface WASIOptions {
   version?: 'unstable' | 'preview1'
@@ -180,6 +172,11 @@ function initWASI (this: WASI, setMemory: (m: WebAssembly.Memory) => void, wrap:
 }
 
 /** @public */
+export interface FinalizeBindingsOptions {
+  memory?: WebAssembly.Memory
+}
+
+/** @public */
 export class WASI {
   /* addWorkerListener (worker: any): void {
     if (worker && !worker._tybysWasmUtilWasiListener) {
@@ -240,14 +237,25 @@ export class WASI {
     if (options.returnOnExit) { wrap.proc_exit = wasiReturnOnProcExit.bind(this) }
   }
 
-  // Must not export _initialize, must export _start
-  start (instance: WebAssembly.Instance): number | undefined | Promise<number> | Promise<undefined> {
+  finalizeBindings (instance: WebAssembly.Instance, {
+    memory = instance?.exports?.memory as WebAssembly.Memory
+  }: FinalizeBindingsOptions = {}): void {
     if (this[kStarted]) {
       throw new Error('WASI instance has already started')
     }
-    this[kStarted] = true
 
-    setupInstance(this, instance)
+    validateObject(instance, 'instance')
+    validateObject(instance.exports, 'instance.exports')
+
+    this[kSetMemory](memory)
+
+    this[kInstance] = instance
+    this[kStarted] = true
+  }
+
+  // Must not export _initialize, must export _start
+  start (instance: WebAssembly.Instance): number | undefined | Promise<number> | Promise<undefined> {
+    this.finalizeBindings(instance)
 
     const { _start, _initialize } = this[kInstance]!.exports
 
@@ -279,12 +287,7 @@ export class WASI {
 
   // Must not export _start, may optionally export _initialize
   initialize (instance: WebAssembly.Instance): void | Promise<void> {
-    if (this[kStarted]) {
-      throw new Error('WASI instance has already started')
-    }
-    this[kStarted] = true
-
-    setupInstance(this, instance)
+    this.finalizeBindings(instance)
 
     const { _start, _initialize } = this[kInstance]!.exports
 
