@@ -1643,7 +1643,7 @@ export class WASI {
       case WasiClockid.MONOTONIC:
       case WasiClockid.PROCESS_CPUTIME_ID:
       case WasiClockid.THREAD_CPUTIME_ID: {
-        const t = performance.now()
+        const t = performance.now() / 1000
         const s = Math.trunc(t)
         const ms = Math.floor((t - s) * 1000)
 
