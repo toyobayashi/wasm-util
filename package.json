@@ -1,6 +1,6 @@
 {
   "name": "@tybys/wasm-util",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "WASI polyfill for browser and some wasm util",
   "main": "./lib/cjs/index.js",
   "module": "./dist/wasm-util.esm-bundler.js",
