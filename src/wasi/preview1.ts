@@ -117,13 +117,7 @@ function defineName<T extends Function> (name: string, f: T): T {
 }
 
 function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (self: WASI, name: string, f: T): T {
-  return defineName(name, function () {
-    if (process.env.NODE_DEBUG_NATIVE === 'wasi') {
-      const args = Array.prototype.slice.call(arguments)
-      let debugArgs = [`${name}(${Array.from({ length: arguments.length }).map(() => '%d').join(', ')})`]
-      debugArgs = debugArgs.concat(args)
-      console.debug.apply(console, debugArgs)
-    }
+  function tryCall (): WasiErrno | PromiseLike<WasiErrno> {
     let r: WasiErrno | PromiseLike<WasiErrno>
     try {
       r = f.apply(self, arguments as any)
@@ -135,7 +129,32 @@ function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | Promi
       return r.then(_ => _, handleError)
     }
     return r
-  }) as unknown as T
+  }
+
+  let debug = false
+
+  const NODE_DEBUG_NATIVE = (() => {
+    try {
+      return process.env.NODE_DEBUG_NATIVE
+    } catch (_) {
+      return undefined
+    }
+  })()
+  if (typeof NODE_DEBUG_NATIVE === 'string' && NODE_DEBUG_NATIVE.split(',').includes('wasi')) {
+    debug = true
+  }
+
+  return debug
+    ? defineName(name, function () {
+      const args = Array.prototype.slice.call(arguments)
+      let debugArgs = [`${name}(${Array.from({ length: arguments.length }).map(() => '%d').join(', ')})`]
+      debugArgs = debugArgs.concat(args)
+      console.debug.apply(console, debugArgs)
+      return tryCall()
+    }) as unknown as T
+    : defineName(name, function () {
+      return tryCall()
+    }) as unknown as T
 }
 
 function resolvePathSync (fs: IFs, fileDescriptor: FileDescriptor, path: string, flags: number): string {
