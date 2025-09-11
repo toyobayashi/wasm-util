@@ -116,21 +116,21 @@ function defineName<T extends Function> (name: string, f: T): T {
   return f
 }
 
-function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (self: WASI, name: string, f: T): T {
-  function tryCall (): WasiErrno | PromiseLike<WasiErrno> {
-    let r: WasiErrno | PromiseLike<WasiErrno>
-    try {
-      r = f.apply(self, arguments as any)
-    } catch (err: any) {
-      return handleError(err)
-    }
-
-    if (isPromiseLike(r)) {
-      return r.then(_ => _, handleError)
-    }
-    return r
+function tryCall<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (f: T, wasi: WASI, args: any[]): WasiErrno | PromiseLike<WasiErrno> {
+  let r: WasiErrno | PromiseLike<WasiErrno>
+  try {
+    r = f.apply(wasi, args)
+  } catch (err: any) {
+    return handleError(err)
   }
 
+  if (isPromiseLike(r)) {
+    return r.then(_ => _, handleError)
+  }
+  return r
+}
+
+function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | PromiseLike<WasiErrno>> (self: WASI, name: string, f: T): T {
   let debug = false
 
   const NODE_DEBUG_NATIVE = (() => {
@@ -150,10 +150,10 @@ function syscallWrap<T extends (this: WASI, ...args: any[]) => WasiErrno | Promi
       let debugArgs = [`${name}(${Array.from({ length: arguments.length }).map(() => '%d').join(', ')})`]
       debugArgs = debugArgs.concat(args)
       console.debug.apply(console, debugArgs)
-      return tryCall()
+      return tryCall(f, self, args)
     }) as unknown as T
     : defineName(name, function () {
-      return tryCall()
+      return tryCall(f, self, arguments as any)
     }) as unknown as T
 }
 
