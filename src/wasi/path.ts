@@ -3,6 +3,139 @@ import { validateString } from './util'
 const CHAR_DOT = 46 /* . */
 const CHAR_FORWARD_SLASH = 47 /* / */
 
+const CHAR_BACKWARD_SLASH = 92 /* \ */
+const CHAR_COLON = 58 /* : */
+const CHAR_UPPERCASE_A = 65 /* A */
+const CHAR_UPPERCASE_Z = 90 /* Z */
+const CHAR_LOWERCASE_A = 97 /* a */
+const CHAR_LOWERCASE_Z = 122 /* z */
+
+function isPathSeparatorWin (code: number): boolean {
+  return code === CHAR_FORWARD_SLASH || code === CHAR_BACKWARD_SLASH
+}
+
+function isWindowsDeviceRoot (code: number): boolean {
+  return (code >= CHAR_UPPERCASE_A && code <= CHAR_UPPERCASE_Z) ||
+         (code >= CHAR_LOWERCASE_A && code <= CHAR_LOWERCASE_Z)
+}
+
+const _isWin32: boolean =
+  typeof process !== 'undefined' && (process as any).platform === 'win32'
+
+/**
+ * Windows variant of `resolve()`. Mirrors Node's `path.win32.resolve`
+ * semantics enough for the WASI shim's needs (drive-letter absolutes
+ * + UNC paths + per-drive cwd lookups via `process.env`/`process.cwd`).
+ *
+ * Why this is needed: on Windows, `FileDescriptor.realPath` is the
+ * host realpath returned by `fs.realpathSync(realPath, 'utf8')` — the
+ * backslash form `D:\…`. The POSIX-only `resolveImpl` below only
+ * treats `/` as a separator, reads `D` as non-`/`, decides realPath
+ * is "relative", and produces a garbage joined path. Downstream
+ * `fs.openSync(garbage)` then returns `EINVAL` and the WASI caller
+ * sees a permanent failure. This function gives us the correct
+ * Windows-style resolution without taking a Node-only `path` import
+ * (which would break browser bundles of this package).
+ *
+ * Cribbed from Node's `lib/path.js` `win32.resolve()` (MIT-licensed),
+ * trimmed to what WASI realpath resolution actually exercises.
+ */
+function resolveWin32 (args: string[]): string {
+  let resolvedDevice = ''
+  let resolvedTail = ''
+  let resolvedAbsolute = false
+
+  for (let i = args.length - 1; i >= -1; i--) {
+    let path: string
+    if (i >= 0) {
+      path = args[i]
+      validateString(path, 'path')
+      if (path.length === 0) continue
+    } else if (resolvedDevice.length === 0) {
+      path = (typeof process !== 'undefined' && typeof (process as any).cwd === 'function')
+        ? (process as any).cwd() as string
+        : ''
+    } else {
+      // Look up per-drive cwd via the `=X:` env var convention; fall back
+      // to the global cwd if absent.
+      const envKey = `=${resolvedDevice}`
+      const env = (typeof process !== 'undefined') ? (process as any).env : undefined
+      path = (env && typeof env[envKey] === 'string')
+        ? env[envKey] as string
+        : (typeof process !== 'undefined' && typeof (process as any).cwd === 'function')
+          ? (process as any).cwd() as string
+          : ''
+      if (path === undefined ||
+          (path.slice(0, 2).toLowerCase() !== resolvedDevice.toLowerCase() &&
+           path.charCodeAt(2) === CHAR_BACKWARD_SLASH)) {
+        path = `${resolvedDevice}\\`
+      }
+    }
+
+    const len = path.length
+    let rootEnd = 0
+    let device = ''
+    let isAbsolute = false
+    const code = path.charCodeAt(0)
+
+    if (len === 1) {
+      if (isPathSeparatorWin(code)) {
+        rootEnd = 1
+        isAbsolute = true
+      }
+    } else if (isPathSeparatorWin(code)) {
+      isAbsolute = true
+      if (isPathSeparatorWin(path.charCodeAt(1))) {
+        // UNC path: `\\server\share\…`
+        let j = 2
+        let last = j
+        while (j < len && !isPathSeparatorWin(path.charCodeAt(j))) j++
+        if (j < len && j !== last) {
+          const firstPart = path.slice(last, j)
+          last = j
+          while (j < len && isPathSeparatorWin(path.charCodeAt(j))) j++
+          if (j < len && j !== last) {
+            last = j
+            while (j < len && !isPathSeparatorWin(path.charCodeAt(j))) j++
+            if (j === len || j !== last) {
+              device = `\\\\${firstPart}\\${path.slice(last, j)}`
+              rootEnd = j
+            }
+          }
+        }
+      } else {
+        rootEnd = 1
+      }
+    } else if (isWindowsDeviceRoot(code) && path.charCodeAt(1) === CHAR_COLON) {
+      device = path.slice(0, 2)
+      rootEnd = 2
+      if (len > 2 && isPathSeparatorWin(path.charCodeAt(2))) {
+        isAbsolute = true
+        rootEnd = 3
+      }
+    }
+
+    if (device.length > 0) {
+      if (resolvedDevice.length > 0) {
+        if (device.toLowerCase() !== resolvedDevice.toLowerCase()) continue
+      } else {
+        resolvedDevice = device
+      }
+    }
+
+    if (resolvedAbsolute) {
+      if (resolvedDevice.length > 0) break
+    } else {
+      resolvedTail = `${path.slice(rootEnd)}\\${resolvedTail}`
+      resolvedAbsolute = isAbsolute
+      if (isAbsolute && resolvedDevice.length > 0) break
+    }
+  }
+
+  resolvedTail = normalizeString(resolvedTail, !resolvedAbsolute, '\\', isPathSeparatorWin)
+  return resolvedDevice + (resolvedAbsolute ? '\\' : '') + resolvedTail || '.'
+}
+
 function isPosixPathSeparator (code: number): boolean {
   return code === CHAR_FORWARD_SLASH
 }
@@ -74,6 +207,13 @@ function normalizeString (path: string, allowAboveRoot: boolean, separator: stri
 }
 
 export function resolve (...args: string[]): string {
+  // On Windows, host paths are `D:\…` style. The POSIX-only resolver
+  // below treats `D` as a non-`/` character and produces garbage; route
+  // to the Windows-aware variant. POSIX hosts (Linux/macOS/browser)
+  // run the original code path unchanged — `_isWin32` is constant-folded
+  // away on those targets.
+  if (_isWin32) return resolveWin32(args)
+
   let resolvedPath = ''
   let resolvedAbsolute = false
 
