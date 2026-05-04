@@ -2,6 +2,24 @@ import { _WebAssembly } from '../webassembly'
 import type { IFs, IFsPromises, FileHandle } from './fs'
 import { resolve } from './path'
 
+// Linux fcntl flag bits ↔ Windows libuv flag bits. `pathOpen()` builds
+// `flagsRes` using Linux constants (O_CREAT=0x40, O_EXCL=0x80,
+// O_APPEND=0x400). Windows libuv expects different bits (O_CREAT=0x100,
+// O_EXCL=0x400, O_APPEND=0x8). Without translation,
+// `fs.openSync(path, 0x241 /* L:WRONLY|CREAT|TRUNC */)` is rejected
+// with EINVAL because Linux's 0x40 happens to mean O_TEMPORARY on
+// Windows — and O_TEMPORARY without O_CREAT is invalid.
+const _isWin32Flags: boolean =
+  typeof process !== 'undefined' && (process as any).platform === 'win32'
+function _toWinOpenFlags (f: number): number {
+  let r = f & 3                  // RDONLY/WRONLY/RDWR — same on both
+  if ((f & 0x40) !== 0) r |= 0x100   // O_CREAT:  Linux 0x40  -> Windows 0x100
+  if ((f & 0x80) !== 0) r |= 0x400   // O_EXCL:   Linux 0x80  -> Windows 0x400
+  if ((f & 0x200) !== 0) r |= 0x200  // O_TRUNC:  same value on both
+  if ((f & 0x400) !== 0) r |= 0x8    // O_APPEND: Linux 0x400 -> Windows 0x8
+  return r
+}
+
 import {
   WasiErrno,
   WasiRights,
@@ -1235,7 +1253,7 @@ export class WASI {
         const pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
         const fs = getFs(this) as IFs
         const resolved_path = resolvePathSync(fs, fileDescriptor, pathString, dirflags)
-        const r = fs.openSync(resolved_path, flagsRes, 0o666)
+        const r = fs.openSync(resolved_path, _isWin32Flags ? _toWinOpenFlags(flagsRes) : flagsRes, 0o666)
         const filetype = (wasi.fds as SyncTable).getFileTypeByFd(r)
         if (
           (filetype !== WasiFileType.DIRECTORY) &&
@@ -1293,7 +1311,7 @@ export class WASI {
         const pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
         const fs = getFs(this) as { promises: IFsPromises }
         const resolved_path = await resolvePathAsync(fs, fileDescriptor, pathString, dirflags)
-        const r = await fs.promises.open(resolved_path, flagsRes, 0o666)
+        const r = await fs.promises.open(resolved_path, _isWin32Flags ? _toWinOpenFlags(flagsRes) : flagsRes, 0o666)
         const filetype = await (wasi.fds as AsyncTable).getFileTypeByFd(r)
         if ((o_flags & WasiFileControlFlag.O_DIRECTORY) !== 0 && filetype !== WasiFileType.DIRECTORY) {
           return WasiErrno.ENOTDIR
