@@ -93,8 +93,19 @@ const _memory = new WeakMap<WASI, Memory>()
 const _wasi = new WeakMap<WASI, WrappedData>()
 const _fs = new WeakMap<WASI, IFs | { promises: IFsPromises }>()
 
-function getMemory (wasi: WASI): Memory {
-  return _memory.get(wasi)!
+export function ensureMemoryFor (memory: Pick<WebAssembly.Memory, 'buffer' | 'grow'>, end: number): ArrayBufferLike {
+  let buffer = memory.buffer
+  if (end > buffer.byteLength) {
+    memory.grow(0)
+    buffer = memory.buffer
+  }
+  return buffer
+}
+
+function getMemory (wasi: WASI, end = 0): Memory {
+  const memory = _memory.get(wasi)!
+  ensureMemoryFor(memory, end)
+  return memory
 }
 
 function getFs (wasi: WASI): IFs | { promises: IFsPromises } {
@@ -418,7 +429,7 @@ export class WASI {
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_GET, BigInt(0))
         const fs = getFs(this) as IFs
         const stat = fs.fstatSync(fileDescriptor.fd as number, { bigint: true })
-        const { view } = getMemory(this)
+        const { view } = getMemory(this, buf + 64)
         toFileStat(view, buf, stat)
         return WasiErrno.ESUCCESS
       },
@@ -429,7 +440,7 @@ export class WASI {
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_FILESTAT_GET, BigInt(0))
         const h = fileDescriptor.fd as FileHandle
         const stat = await h.stat({ bigint: true })
-        const { view } = getMemory(this)
+        const { view } = getMemory(this, buf + 64)
         toFileStat(view, buf, stat)
         return WasiErrno.ESUCCESS
       },
@@ -504,7 +515,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ | WasiRights.FD_SEEK, BigInt(0))
@@ -546,7 +557,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ | WasiRights.FD_SEEK, BigInt(0))
@@ -585,7 +596,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE | WasiRights.FD_SEEK, BigInt(0))
@@ -613,7 +624,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0 || offset > INT64_MAX) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE | WasiRights.FD_SEEK, BigInt(0))
@@ -644,7 +655,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ, BigInt(0))
@@ -695,7 +706,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READ, BigInt(0))
@@ -747,7 +758,7 @@ export class WASI {
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READDIR, BigInt(0))
         const fs = getFs(this) as IFs
         const entries = fs.readdirSync(fileDescriptor.realPath, { withFileTypes: true })
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(buf + buf_len, bufused + 4))
         let bufferUsed = 0
         for (let i = Number(cookie); i < entries.length; i++) {
           const nameData = encoder.encode(entries[i].name)
@@ -808,7 +819,7 @@ export class WASI {
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_READDIR, BigInt(0))
         const fs = getFs(this) as { promises: IFsPromises }
         const entries = await fs.promises.readdir(fileDescriptor.realPath, { withFileTypes: true })
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(buf + buf_len, bufused + 4))
         let bufferUsed = 0
         for (let i = Number(cookie); i < entries.length; i++) {
           const nameData = encoder.encode(entries[i].name)
@@ -900,7 +911,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE, BigInt(0))
@@ -934,7 +945,7 @@ export class WASI {
         if ((iovs === 0 && iovslen) || size === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(iovs + Number(iovslen) * 8, size + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_WRITE, BigInt(0))
@@ -971,7 +982,7 @@ export class WASI {
         if (path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_CREATE_DIRECTORY, BigInt(0))
@@ -988,7 +999,7 @@ export class WASI {
         if (path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_CREATE_DIRECTORY, BigInt(0))
@@ -1010,7 +1021,7 @@ export class WASI {
         if (path === 0 || filestat === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(path + path_len, filestat + 64))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
@@ -1035,7 +1046,7 @@ export class WASI {
         if (path === 0 || filestat === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(path + path_len, filestat + 64))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_GET, BigInt(0))
@@ -1062,7 +1073,7 @@ export class WASI {
         path_len = Number(path_len)
         if (path === 0) return WasiErrno.EINVAL
 
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
 
@@ -1087,7 +1098,7 @@ export class WASI {
         path_len = Number(path_len)
         if (path === 0) return WasiErrno.EINVAL
 
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_FILESTAT_SET_TIMES, BigInt(0))
 
@@ -1128,7 +1139,7 @@ export class WASI {
           oldWrap = wasi.fds.get(old_fd, WasiRights.PATH_LINK_SOURCE, BigInt(0))
           newWrap = wasi.fds.get(new_fd, WasiRights.PATH_LINK_TARGET, BigInt(0))
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, Math.max(old_path + old_path_len, new_path + new_path_len))
         const fs = getFs(this) as IFs
         const resolvedOldPath = resolvePathSync(fs, oldWrap, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)), old_flags)
         const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
@@ -1154,7 +1165,7 @@ export class WASI {
           oldWrap = wasi.fds.get(old_fd, WasiRights.PATH_LINK_SOURCE, BigInt(0))
           newWrap = wasi.fds.get(new_fd, WasiRights.PATH_LINK_TARGET, BigInt(0))
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, Math.max(old_path + old_path_len, new_path + new_path_len))
         const fs = getFs(this) as { promises: IFsPromises }
         const resolvedOldPath = await resolvePathAsync(fs, oldWrap, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)), old_flags)
         const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
@@ -1248,7 +1259,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(dirfd, neededBase, neededInheriting)
-        const memory = getMemory(this)
+        const memory = getMemory(this, Math.max(path + path_len, fd + 4))
         const HEAPU8 = memory.HEAPU8
         const pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
         const fs = getFs(this) as IFs
@@ -1306,7 +1317,7 @@ export class WASI {
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(dirfd, neededBase, neededInheriting)
-        const memory = getMemory(this)
+        const memory = getMemory(this, Math.max(path + path_len, fd + 4))
         const HEAPU8 = memory.HEAPU8
         const pathString = decoder.decode(unsharedSlice(HEAPU8, path, path + path_len))
         const fs = getFs(this) as { promises: IFsPromises }
@@ -1343,7 +1354,7 @@ export class WASI {
         if (path === 0 || buf === 0 || bufused === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(path + path_len, buf + buf_len, bufused + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_READLINK, BigInt(0))
@@ -1370,7 +1381,7 @@ export class WASI {
         if (path === 0 || buf === 0 || bufused === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8, view } = getMemory(this)
+        const { HEAPU8, view } = getMemory(this, Math.max(path + path_len, buf + buf_len, bufused + 4))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_READLINK, BigInt(0))
@@ -1398,7 +1409,7 @@ export class WASI {
         if (path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_REMOVE_DIRECTORY, BigInt(0))
@@ -1416,7 +1427,7 @@ export class WASI {
         if (path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_REMOVE_DIRECTORY, BigInt(0))
@@ -1449,7 +1460,7 @@ export class WASI {
           oldWrap = wasi.fds.get(old_fd, WasiRights.PATH_RENAME_SOURCE, BigInt(0))
           newWrap = wasi.fds.get(new_fd, WasiRights.PATH_RENAME_TARGET, BigInt(0))
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, Math.max(old_path + old_path_len, new_path + new_path_len))
         const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)))
         const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
         const fs = getFs(this) as IFs
@@ -1474,7 +1485,7 @@ export class WASI {
           oldWrap = wasi.fds.get(old_fd, WasiRights.PATH_RENAME_SOURCE, BigInt(0))
           newWrap = wasi.fds.get(new_fd, WasiRights.PATH_RENAME_TARGET, BigInt(0))
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, Math.max(old_path + old_path_len, new_path + new_path_len))
         const resolvedOldPath = resolve(oldWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, old_path, old_path + old_path_len)))
         const resolvedNewPath = resolve(newWrap.realPath, decoder.decode(unsharedSlice(HEAPU8, new_path, new_path + new_path_len)))
         const fs = getFs(this) as { promises: IFsPromises }
@@ -1493,7 +1504,7 @@ export class WASI {
         if (old_path === 0 || new_path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, Math.max(old_path + old_path_len, new_path + new_path_len))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_SYMLINK, BigInt(0))
@@ -1517,7 +1528,7 @@ export class WASI {
         if (old_path === 0 || new_path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, Math.max(old_path + old_path_len, new_path + new_path_len))
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_SYMLINK, BigInt(0))
@@ -1540,7 +1551,7 @@ export class WASI {
         if (path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_UNLINK_FILE, BigInt(0))
@@ -1558,7 +1569,7 @@ export class WASI {
         if (path === 0) {
           return WasiErrno.EINVAL
         }
-        const { HEAPU8 } = getMemory(this)
+        const { HEAPU8 } = getMemory(this, path + path_len)
 
         const wasi = _wasi.get(this)!
         const fileDescriptor = wasi.fds.get(fd, WasiRights.PATH_UNLINK_FILE, BigInt(0))
@@ -1589,9 +1600,10 @@ export class WASI {
     if (argv === 0 || argv_buf === 0) {
       return WasiErrno.EINVAL
     }
-    const { HEAPU8, view } = getMemory(this)
     const wasi = _wasi.get(this)!
     const args = wasi.args
+    const argsSize = encoder.encode(args.join('\0') + '\0').length
+    const { HEAPU8, view } = getMemory(this, Math.max(argv + args.length * 4, argv_buf + argsSize))
 
     for (let i = 0; i < args.length; ++i) {
       const arg = args[i]
@@ -1612,7 +1624,7 @@ export class WASI {
     if (argc === 0 || argv_buf_size === 0) {
       return WasiErrno.EINVAL
     }
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, Math.max(argc + 4, argv_buf_size + 4))
     const wasi = _wasi.get(this)!
     const args = wasi.args
     view.setUint32(argc, args.length, true)
@@ -1626,9 +1638,10 @@ export class WASI {
     if (environ === 0 || environ_buf === 0) {
       return WasiErrno.EINVAL
     }
-    const { HEAPU8, view } = getMemory(this)
     const wasi = _wasi.get(this)!
     const env = wasi.env
+    const envSize = encoder.encode(env.join('\0') + '\0').length
+    const { HEAPU8, view } = getMemory(this, Math.max(environ + env.length * 4, environ_buf + envSize))
 
     for (let i = 0; i < env.length; ++i) {
       const pair = env[i]
@@ -1648,7 +1661,7 @@ export class WASI {
     if (len === 0 || buflen === 0) {
       return WasiErrno.EINVAL
     }
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, Math.max(len + 4, buflen + 4))
     const wasi = _wasi.get(this)!
     view.setUint32(len, wasi.env.length, true)
     view.setUint32(buflen, encoder.encode(wasi.env.join('\0') + '\0').length, true)
@@ -1660,7 +1673,7 @@ export class WASI {
     if (resolution === 0) {
       return WasiErrno.EINVAL
     }
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, resolution + 8)
 
     switch (id) {
       case WasiClockid.REALTIME:
@@ -1680,7 +1693,7 @@ export class WASI {
     if (time === 0) {
       return WasiErrno.EINVAL
     }
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, time + 8)
 
     switch (id) {
       case WasiClockid.REALTIME:
@@ -1713,7 +1726,7 @@ export class WASI {
     }
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, BigInt(0), BigInt(0))
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, fdstat + 24)
     view.setUint16(fdstat, fileDescriptor.type, true)
     view.setUint16(fdstat + 2, 0, true)
     view.setBigUint64(fdstat + 8, fileDescriptor.rightsBase, true)
@@ -1757,7 +1770,7 @@ export class WASI {
       throw err
     }
     if (fileDescriptor.preopen !== 1) return WasiErrno.EINVAL
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, prestat + 8)
     // preopen type is dir(0)
     view.setUint32(prestat, 0, true)
     view.setUint32(prestat + 4, encoder.encode(fileDescriptor.path).length, true)
@@ -1777,7 +1790,7 @@ export class WASI {
     const buffer = encoder.encode(fileDescriptor.path)
     const size = buffer.length
     if (size > path_len) return WasiErrno.ENOBUFS
-    const { HEAPU8 } = getMemory(this)
+    const { HEAPU8 } = getMemory(this, path + size)
     HEAPU8.set(buffer, path)
     return WasiErrno.ESUCCESS
   })
@@ -1791,7 +1804,7 @@ export class WASI {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_SEEK, BigInt(0))
     const r = fileDescriptor.seek(offset, whence)
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, newOffset + 8)
     view.setBigUint64(newOffset, r, true)
     return WasiErrno.ESUCCESS
   })
@@ -1800,7 +1813,7 @@ export class WASI {
     const wasi = _wasi.get(this)!
     const fileDescriptor = wasi.fds.get(fd, WasiRights.FD_TELL, BigInt(0))
     const pos = BigInt(fileDescriptor.pos)
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, Number(offset) + 8)
     view.setBigUint64(Number(offset), pos, true)
     return WasiErrno.ESUCCESS
   })
@@ -1816,7 +1829,7 @@ export class WASI {
       return WasiErrno.EINVAL
     }
 
-    const { view } = getMemory(this)
+    const { view } = getMemory(this, Math.max(in_ptr + nsubscriptions * 48, out_ptr + nsubscriptions * 32, nevents + 4))
     view.setUint32(nevents, 0, true)
 
     let i = 0
@@ -1946,7 +1959,7 @@ export class WASI {
       }
       buf_len = Number(buf_len)
 
-      const { HEAPU8, view } = getMemory(this)
+      const { HEAPU8, view } = getMemory(this, buf + buf_len)
       if ((typeof SharedArrayBuffer === 'function' && HEAPU8.buffer instanceof SharedArrayBuffer) ||
           (Object.prototype.toString.call(HEAPU8.buffer) === '[object SharedArrayBuffer]')) {
         for (let i = buf; i < buf + buf_len; ++i) {
@@ -1973,7 +1986,7 @@ export class WASI {
       }
       buf_len = Number(buf_len)
 
-      const { view } = getMemory(this)
+      const { view } = getMemory(this, buf + buf_len)
       for (let i = buf; i < buf + buf_len; ++i) {
         view.setUint8(i, Math.floor(Math.random() * 256))
       }
